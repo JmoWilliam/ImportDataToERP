@@ -1,0 +1,311 @@
+@model ImportDataToERP.Models.OrderImportHeader
+@{
+    ViewData["Title"] = Model.Id == 0 ? "新增訂單" : $"編輯訂單 - {Model.ImportBatchNo}";
+    var details = ViewBag.Details as IEnumerable<ImportDataToERP.Models.OrderImportDetail> ?? new List<OrderImportDetail>();
+    var detailList = details.ToList();
+}
+
+<div class="card p-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                @(Model.Id == 0 ? "📋 新增訂單" : "📋 編輯訂單")
+            </h2>
+            @if (Model.Id > 0)
+            {
+                <div class="flex items-center gap-3 mt-1.5 text-sm">
+                    <span class="text-gray-500">匯入單號：<span class="font-mono text-blue-700 font-medium">@Model.ImportBatchNo</span></span>
+                    <span class="text-gray-300">|</span>
+                    <span>ERP拋轉：
+                        @switch (Model.TransferStatus)
+                        {
+                            case 1: <span class="badge badge-muted">未拋轉</span> break;
+                            case 2: <span class="badge badge-success">已拋轉 <span class="font-mono">@Model.ErpOrderNo</span></span> break;
+                            case 3: <span class="badge badge-error cursor-help" title="@Model.TransferMessage">拋轉失敗</span> break;
+                        }
+                    </span>
+                </div>
+            }
+        </div>
+        <a asp-action="Index" class="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1 transition">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg> 回列表
+        </a>
+    </div>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="flex items-center gap-2 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-xl mb-4 text-sm">
+            <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+            @TempData["Success"]
+        </div>
+    }
+
+    <!-- ========== 單頭編輯區 ========== -->
+    <div class="section-card bg-gradient-to-br from-blue-50/40 to-white">
+        <div class="flex justify-between items-center mb-4">
+            <div class="section-title" style="margin-bottom:0">
+                <span class="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center text-sm">H</span>
+                單頭資料
+            </div>
+            @if (Model.Id > 0 && Model.TransferStatus != 2)
+            {
+                <form asp-action="TransferToErp" asp-route-id="@Model.Id" method="post" class="inline" onsubmit="return confirm('確認拋轉此單據到ERP？')">
+                    <button type="submit" class="btn inline-flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                        拋轉ERP
+                    </button>
+                </form>
+            }
+        </div>
+        <form method="post" asp-action="@(Model.Id == 0 ? "Create" : "Edit")" asp-route-id="@Model.Id">
+            <input type="hidden" asp-for="Id" />
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">單別 <span class="text-red-400">*</span></label>
+                    <input asp-for="OrderType" required class="input-modern w-full" placeholder="例: 220" />
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">單號</label>
+                    <input asp-for="OrderNo" class="input-modern w-full" placeholder="客戶單號" />
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">客戶代號 <span class="text-red-400">*</span></label>
+                    <input asp-for="CustomerCode" required class="input-modern w-full" placeholder="例: EC_KS" />
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">部門代號</label>
+                    <input asp-for="DeptCode" class="input-modern w-full" placeholder="例: 6100" />
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">業務人員</label>
+                    <input asp-for="SalesRep" class="input-modern w-full" placeholder="例: E13015" />
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">廠別代號</label>
+                    <input asp-for="FactoryCode" class="input-modern w-full" />
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">訂單日期</label>
+                    <input asp-for="OrderDate" type="date" value="@(Model.OrderDate?.ToString("yyyy-MM-dd"))" class="input-modern w-full" />
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">單據日期</label>
+                    <input asp-for="DocDate" type="date" value="@(Model.DocDate?.ToString("yyyy-MM-dd"))" class="input-modern w-full" />
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">課稅別</label>
+                    <input asp-for="TaxType" class="input-modern w-full" placeholder="1~9" />
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">備註</label>
+                    <input asp-for="Remarks" class="input-modern w-full" placeholder="訂單備註..." />
+                </div>
+            </div>
+            <div class="mt-5 flex gap-3">
+                <button type="submit" class="btn inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
+                    儲存單頭
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- ========== 單身明細區 ========== -->
+    @if (Model.Id > 0)
+    {
+        <div class="section-card">
+            <div class="flex justify-between items-center mb-4">
+                <div class="section-title" style="margin-bottom:0">
+                    <span class="w-7 h-7 rounded-lg bg-green-600 text-white flex items-center justify-center text-sm">D</span>
+                    明細資料
+                    <span class="text-sm text-gray-400 font-normal" id="detailCount">(@detailList.Count 筆)</span>
+                </div>
+                <button onclick="addNewRow()" class="btn inline-flex items-center gap-1.5 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                    新增明細
+                </button>
+            </div>
+
+            @if (detailList.Count == 0)
+            {
+                <!-- 空明細狀態：不在 table 內 -->
+                <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
+                    <div class="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-3">
+                        <svg class="w-7 h-7 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                    </div>
+                    <span class="text-sm font-medium">尚無明細資料</span>
+                    <span class="text-xs mt-1">點擊上方「新增明細」按鈕新增</span>
+                </div>
+            }
+            else
+            {
+                <!-- 明細表格 -->
+                <div class="overflow-x-auto max-h-[55vh] overflow-y-auto rounded-xl border border-gray-200" id="detailTableContainer">
+                <table class="min-w-full" id="detailTable">
+                    <thead class="bg-gray-50/80 sticky top-0 z-10 backdrop-blur">
+                        <tr>
+                            <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 w-16">序號</th>
+                            <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">品號</th>
+                            <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">品名</th>
+                            <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">庫別</th>
+                            <th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-20">數量</th>
+                            <th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-14">單位</th>
+                            <th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">單價</th>
+                            <th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-24">金額</th>
+                            <th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-14">幣別</th>
+                            <th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-50 bg-white">
+                        @foreach (var d in detailList)
+                        {
+                            <tr id="row-@d.Id" class="detail-row hover:bg-blue-50/30 transition">
+                                <!-- Read mode -->
+                                <td class="px-3 py-2 view-mode text-sm">@d.SeqNo</td>
+                                <td class="px-3 py-2 view-mode font-mono text-xs text-gray-700">@d.ProductCode</td>
+                                <td class="px-3 py-2 view-mode text-sm">@d.ProductName</td>
+                                <td class="px-3 py-2 view-mode text-sm text-gray-500">@d.Warehouse</td>
+                                <td class="px-3 py-2 view-mode text-sm text-right font-medium">@d.OrderQty.ToString("N0")</td>
+                                <td class="px-3 py-2 view-mode text-sm text-center">@d.Unit</td>
+                                <td class="px-3 py-2 view-mode text-sm text-right">@d.UnitPrice.ToString("N2")</td>
+                                <td class="px-3 py-2 view-mode text-sm text-right font-medium">@d.Amount.ToString("N2")</td>
+                                <td class="px-3 py-2 view-mode text-sm text-center">@d.Currency</td>
+
+                                <!-- Edit mode -->
+                                <td class="px-3 py-2 edit-mode hidden"><input class="w-16 input-modern text-xs py-1" value="@d.SeqNo" data-field="SeqNo" /></td>
+                                <td class="px-3 py-2 edit-mode hidden"><input class="w-24 input-modern text-xs py-1 font-mono" value="@d.ProductCode" data-field="ProductCode" /></td>
+                                <td class="px-3 py-2 edit-mode hidden"><input class="w-28 input-modern text-xs py-1" value="@d.ProductName" data-field="ProductName" /></td>
+                                <td class="px-3 py-2 edit-mode hidden"><input class="w-16 input-modern text-xs py-1" value="@d.Warehouse" data-field="Warehouse" /></td>
+                                <td class="px-3 py-2 edit-mode hidden"><input class="w-20 input-modern text-xs py-1 text-right" value="@d.OrderQty" data-field="OrderQty" type="number" step="any" /></td>
+                                <td class="px-3 py-2 edit-mode hidden"><input class="w-12 input-modern text-xs py-1 text-center" value="@d.Unit" data-field="Unit" /></td>
+                                <td class="px-3 py-2 edit-mode hidden"><input class="w-20 input-modern text-xs py-1 text-right" value="@d.UnitPrice" data-field="UnitPrice" type="number" step="any" /></td>
+                                <td class="px-3 py-2 edit-mode hidden"><input class="w-22 input-modern text-xs py-1 text-right" value="@d.Amount" data-field="Amount" type="number" step="any" /></td>
+                                <td class="px-3 py-2 edit-mode hidden"><input class="w-14 input-modern text-xs py-1 text-center" value="@d.Currency" data-field="Currency" /></td>
+
+                                <!-- Actions -->
+                                <td class="px-3 py-2 text-center whitespace-nowrap">
+                                    <span class="view-mode flex items-center justify-center gap-1.5">
+                                        <button onclick="editRow(@d.Id)" class="btn px-2 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100">編輯</button>
+                                        <button onclick="deleteRow(@d.Id)" class="btn px-2 py-1 rounded-md text-xs font-medium bg-red-50 text-red-500 hover:bg-red-100">刪除</button>
+                                    </span>
+                                    <span class="edit-mode hidden flex items-center justify-center gap-1.5">
+                                        <button onclick="saveRow(@d.Id)" class="btn px-2 py-1 rounded-md text-xs font-medium bg-green-50 text-green-600 hover:bg-green-100">儲存</button>
+                                        <button onclick="cancelRow(@d.Id)" class="btn px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-500 hover:bg-gray-200">取消</button>
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="section-card">
+            <div class="flex flex-col items-center py-8 text-gray-400">
+                <svg class="w-12 h-12 mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <span class="text-sm">💡 請先儲存單頭後，即可新增明細</span>
+            </div>
+        </div>
+    }
+</div>
+
+<script>
+const headerId = @Model.Id;
+
+function editRow(id) {
+    const row = document.getElementById('row-' + id);
+    row.querySelectorAll('.view-mode').forEach(td => td.classList.add('hidden'));
+    row.querySelectorAll('.edit-mode').forEach(td => td.classList.remove('hidden'));
+    row.classList.add('bg-blue-50/50');
+}
+
+function cancelRow(id) {
+    const row = document.getElementById('row-' + id);
+    row.querySelectorAll('.view-mode').forEach(td => td.classList.remove('hidden'));
+    row.querySelectorAll('.edit-mode').forEach(td => td.classList.add('hidden'));
+    row.classList.remove('bg-blue-50/50');
+}
+
+async function saveRow(id) {
+    const row = document.getElementById('row-' + id);
+    const data = { id: id, headerId: headerId };
+    row.querySelectorAll('[data-field]').forEach(input => {
+        let val = input.value;
+        if (input.type === 'number') val = parseFloat(val) || 0;
+        data[input.dataset.field] = val;
+    });
+
+    try {
+        const resp = await fetch('/OrderImport/UpdateDetail', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!resp.ok) throw new Error('Failed');
+
+        const cells = row.querySelectorAll('.view-mode');
+        cells[0].textContent = data.SeqNo || '';
+        cells[1].textContent = data.ProductCode || '';
+        cells[2].textContent = data.ProductName || '';
+        cells[3].textContent = data.Warehouse || '';
+        cells[4].textContent = Number(data.OrderQty || 0).toLocaleString();
+        cells[5].textContent = data.Unit || '';
+        cells[6].textContent = Number(data.UnitPrice || 0).toLocaleString(undefined, {minimumFractionDigits:2});
+        cells[7].textContent = Number(data.Amount || 0).toLocaleString(undefined, {minimumFractionDigits:2});
+        cells[8].textContent = data.Currency || '';
+        cancelRow(id);
+    } catch(e) {
+        alert('儲存失敗: ' + e.message);
+    }
+}
+
+async function deleteRow(id) {
+    if (!confirm('確認刪除此明細？')) return;
+    try {
+        const resp = await fetch('/OrderImport/DeleteDetail', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: id })
+        });
+        if (!resp.ok) throw new Error('Failed');
+        const row = document.getElementById('row-' + id);
+        row.remove();
+        const remaining = document.querySelectorAll('.detail-row').length;
+        if (remaining === 0) location.reload();
+        updateDetailCount();
+    } catch(e) {
+        alert('刪除失敗');
+    }
+}
+
+async function addNewRow() {
+    const data = {
+        headerId: headerId,
+        seqNo: '', productCode: '', productName: '', warehouse: '',
+        orderQty: 0, unit: '', unitPrice: 0, amount: 0, currency: '', orderType: ''
+    };
+    try {
+        const resp = await fetch('/OrderImport/CreateDetail', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!resp.ok) throw new Error('Failed');
+        location.reload();
+    } catch(e) {
+        alert('新增失敗');
+    }
+}
+
+function updateDetailCount() {
+    const el = document.getElementById('detailCount');
+    if (el) {
+        const count = document.querySelectorAll('.detail-row').length;
+        el.textContent = '(' + count + ' \u7B46)';
+    }
+}
+</script>

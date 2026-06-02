@@ -1,0 +1,59 @@
+@model ImportDataToERP.Models.QuotationImport
+@{
+    ViewData["Title"] = "新增報價單";
+}
+
+<div class="max-w-2xl mx-auto">
+    <div class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-xl font-bold text-gray-800 mb-4">📄 新增報價單</h2>
+
+        <form asp-action="Create" method="post" class="space-y-4">
+            <div asp-validation-summary="ModelOnly" class="text-red-500 text-sm bg-red-50 p-2 rounded"></div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label asp-for="QuotationNo" class="block text-sm font-medium text-gray-700 mb-1">報價單號</label>
+                    <input asp-for="QuotationNo" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <span asp-validation-for="QuotationNo" class="text-red-500 text-xs"></span>
+                </div>
+                <div>
+                    <label asp-for="CustomerCode" class="block text-sm font-medium text-gray-700 mb-1">客戶編號</label>
+                    <input asp-for="CustomerCode" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                </div>
+                <div>
+                    <label asp-for="CustomerName" class="block text-sm font-medium text-gray-700 mb-1">客戶名稱</label>
+                    <input asp-for="CustomerName" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                </div>
+                <div>
+                    <label asp-for="ProductCode" class="block text-sm font-medium text-gray-700 mb-1">品號</label>
+                    <input asp-for="ProductCode" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                </div>
+                <div>
+                    <label asp-for="ProductName" class="block text-sm font-medium text-gray-700 mb-1">品名</label>
+                    <input asp-for="ProductName" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                </div>
+                <div>
+                    <label asp-for="Quantity" class="block text-sm font-medium text-gray-700 mb-1">數量</label>
+                    <input asp-for="Quantity" type="number" step="any" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                </div>
+                <div>
+                    <label asp-for="UnitPrice" class="block text-sm font-medium text-gray-700 mb-1">單價</label>
+                    <input asp-for="UnitPrice" type="number" step="any" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                </div>
+                <div>
+                    <label asp-for="Currency" class="block text-sm font-medium text-gray-700 mb-1">幣別</label>
+                    <input asp-for="Currency" class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                </div>
+            </div>
+
+            <div class="flex gap-3 pt-2">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm transition">儲存</button>
+                <a asp-action="Index" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded text-sm transition">取消</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -1,0 +1,111 @@
+@model ImportDataToERP.Models.OrderImportViewModel
+@{
+    ViewData["Title"] = "訂單匯入預覽";
+}
+
+<div class="card p-6">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">📋 訂單匯入預覽</h2>
+            <p class="text-sm text-gray-400 mt-1 flex items-center gap-3">
+                <span>📄 @Model.FileName</span>
+                <span class="text-gray-200">|</span>
+                <span class="badge badge-info">單頭 @Model.TotalHeaders 筆</span>
+                <span class="badge badge-purple">明細 @Model.TotalDetailRows 行</span>
+            </p>
+        </div>
+        <div class="flex gap-3">
+            <a asp-action="Index" class="btn bg-gray-100 hover:bg-gray-200 text-gray-600 px-5 py-2.5 rounded-lg text-sm font-medium">取消</a>
+            <form asp-action="Confirm" method="post" onsubmit="return confirm('確認將這 @Model.TotalHeaders 筆單頭、@Model.TotalDetailRows 行明細寫入資料庫？')">
+                <button type="submit" class="btn bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                    確認匯入
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="space-y-3">
+        @foreach (var group in Model.HeaderGroups)
+        {
+            var h = group.Header;
+            var detailArr = group.Details.ToList();
+            <div class="border border-gray-200 rounded-xl overflow-hidden hover:shadow-sm transition">
+                <!-- 單頭摘要 -->
+                <div class="bg-gradient-to-r from-blue-50 to-white px-5 py-3.5 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm">
+                    <span class="font-semibold text-blue-800 text-base">🏢 @h.CustomerCode</span>
+                    <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">單別</span> <b class="text-gray-800">@h.OrderType</b></span>
+                    @if (!string.IsNullOrEmpty(h.OrderNo))
+                    { <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">單號</span> @h.OrderNo</span> }
+                    <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">部門</span> @h.DeptCode</span>
+                    <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">業務</span> @h.SalesRep</span>
+                    <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">訂單日</span> @h.OrderDate?.ToString("yyyy-MM-dd")</span>
+                    <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">單據日</span> @h.DocDate?.ToString("yyyy-MM-dd")</span>
+                    <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">課稅別</span> @h.TaxType</span>
+                    <span class="ml-auto badge badge-info">@detailArr.Count 筆明細</span>
+                </div>
+
+                @if (!string.IsNullOrEmpty(h.Remarks))
+                {
+                    <div class="px-5 py-2.5 bg-yellow-50/80 border-t border-b border-yellow-100 text-sm text-yellow-800 flex items-center gap-2">
+                        <span>💬</span> @h.Remarks
+                    </div>
+                }
+
+                <!-- 明細列表 -->
+                <div class="overflow-x-auto">
+                    <table class="min-w-full">
+                        <thead class="bg-gray-50/50">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-16">序號</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500">品號</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500">品名</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500">庫別</th>
+                                <th class="px-3 py-2 text-right text-xs font-semibold text-gray-500 w-20">數量</th>
+                                <th class="px-3 py-2 text-center text-xs font-semibold text-gray-500 w-14">單位</th>
+                                <th class="px-3 py-2 text-right text-xs font-semibold text-gray-500 w-22">單價</th>
+                                <th class="px-3 py-2 text-right text-xs font-semibold text-gray-500 w-24">金額</th>
+                                <th class="px-3 py-2 text-center text-xs font-semibold text-gray-500 w-14">幣別</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            @foreach (var d in detailArr)
+                            {
+                                <tr class="hover:bg-gray-50/50 text-sm">
+                                    <td class="px-3 py-1.5 text-gray-500">@d.SeqNo</td>
+                                    <td class="px-3 py-1.5 font-mono text-xs text-gray-700">@d.ProductCode</td>
+                                    <td class="px-3 py-1.5">@d.ProductName</td>
+                                    <td class="px-3 py-1.5 text-gray-500">@d.Warehouse</td>
+                                    <td class="px-3 py-1.5 text-right font-medium">@d.OrderQty.ToString("N0")</td>
+                                    <td class="px-3 py-1.5 text-center">@d.Unit</td>
+                                    <td class="px-3 py-1.5 text-right">@d.UnitPrice.ToString("N2")</td>
+                                    <td class="px-3 py-1.5 text-right font-medium">@d.Amount.ToString("N2")</td>
+                                    <td class="px-3 py-1.5 text-center">@d.Currency</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (Model.HeaderGroups.Count == 0)
+    {
+        <div class="flex flex-col items-center py-10 text-gray-400">
+            <svg class="w-8 h-8 mb-2 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            <span class="text-sm">無資料可預覽</span>
+        </div>
+    }
+
+    <!-- 底部確認 -->
+    <div class="flex justify-end gap-3 mt-6 pt-5 border-t border-gray-100">
+        <a asp-action="Index" class="btn bg-gray-100 hover:bg-gray-200 text-gray-600 px-5 py-2.5 rounded-lg text-sm font-medium">取消</a>
+        <form asp-action="Confirm" method="post" onsubmit="return confirm('確認將 @Model.TotalHeaders 筆單頭、@Model.TotalDetailRows 行明細寫入資料庫？')">
+            <button type="submit" class="btn bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded-lg text-sm font-medium flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                確認匯入全部
+            </button>
+        </form>
+    </div>
+</div>

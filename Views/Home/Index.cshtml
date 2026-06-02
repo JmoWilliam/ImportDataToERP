@@ -1,0 +1,44 @@
+@{
+    ViewData["Title"] = "首頁";
+}
+
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+    <a asp-controller="User" asp-action="Index" class="bg-white rounded-xl shadow p-6 hover:shadow-md transition border-l-4 border-blue-500">
+        <div class="text-4xl mb-3">👤</div>
+        <h3 class="font-bold text-gray-800 text-lg">使用者資料維護</h3>
+        <p class="text-sm text-gray-500 mt-1">管理系統使用者帳號與權限</p>
+    </a>
+    <a asp-controller="QuotationImport" asp-action="Index" class="bg-white rounded-xl shadow p-6 hover:shadow-md transition border-l-4 border-green-500">
+        <div class="text-4xl mb-3">📄</div>
+        <h3 class="font-bold text-gray-800 text-lg">匯入報價單</h3>
+        <p class="text-sm text-gray-500 mt-1">將報價單資料匯入 ERP 系統</p>
+    </a>
+    <a asp-controller="OrderImport" asp-action="Index" class="bg-white rounded-xl shadow p-6 hover:shadow-md transition border-l-4 border-purple-500">
+        <div class="text-4xl mb-3">📋</div>
+        <h3 class="font-bold text-gray-800 text-lg">匯入訂單</h3>
+        <p class="text-sm text-gray-500 mt-1">將訂單資料匯入 ERP 系統</p>
+    </a>
+    <a asp-controller="OrderChangeImport" asp-action="Index" class="bg-white rounded-xl shadow p-6 hover:shadow-md transition border-l-4 border-orange-500">
+        <div class="text-4xl mb-3">🔄</div>
+        <h3 class="font-bold text-gray-800 text-lg">匯入訂單變更</h3>
+        <p class="text-sm text-gray-500 mt-1">將訂單變更資料匯入 ERP 系統</p>
+    </a>
+</div>
+
+<div class="bg-white rounded-xl shadow p-8">
+    <h2 class="text-lg font-bold text-gray-800 mb-4">📊 系統資訊</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="bg-blue-50 rounded-lg p-5">
+            <div class="text-blue-600 font-semibold mb-1">技術架構</div>
+            <div class="text-gray-600 text-sm">.NET Core MVC + Dapper + Tailwind CSS</div>
+        </div>
+        <div class="bg-green-50 rounded-lg p-5">
+            <div class="text-green-600 font-semibold mb-1">資料庫</div>
+            <div class="text-gray-600 text-sm">SQL Server (localhost:1433)</div>
+        </div>
+        <div class="bg-purple-50 rounded-lg p-5">
+            <div class="text-purple-600 font-semibold mb-1">版本</div>
+            <div class="text-gray-600 text-sm">.NET 10.0</div>
+        </div>
+    </div>
+</div>

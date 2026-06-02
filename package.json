@@ -1,0 +1,12 @@
+{
+  "name": "importdatatoerp",
+  "version": "1.0.0",
+  "scripts": {
+    "css:build": "npx @tailwindcss/cli -i ./app.css -o ./wwwroot/css/site.css --minify",
+    "css:watch": "npx @tailwindcss/cli -i ./app.css -o ./wwwroot/css/site.css --watch"
+  },
+  "dependencies": {
+    "@tailwindcss/cli": "^4.3.0",
+    "tailwindcss": "^4.3.0"
+  }
+}

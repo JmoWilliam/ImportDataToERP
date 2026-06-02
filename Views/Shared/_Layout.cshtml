@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>@ViewData["Title"] - ImportDataToERP</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <style>
+        :root {
+            --font-body: 'Noto Sans TC', 'Inter', system-ui, -apple-system, sans-serif;
+            --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+        }
+        body { font-family: var(--font-body); }
+        .font-mono { font-family: var(--font-mono); }
+        .btn { transition: all 0.2s ease; }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .btn:active { transform: translateY(0); }
+        .card { background: #fff; border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
+        .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 500; }
+        .badge-success { background: #ecfdf5; color: #065f46; }
+        .badge-warning { background: #fefce8; color: #854d0e; }
+        .badge-info { background: #eff6ff; color: #1e40af; }
+        .badge-error { background: #fef2f2; color: #991b1b; }
+        .badge-muted { background: #f3f4f6; color: #6b7280; }
+        .badge-purple { background: #f5f3ff; color: #6b21a8; }
+        .input-modern { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 12px; font-size: 0.875rem; transition: border-color 0.2s, box-shadow 0.2s; outline: none; }
+        .input-modern:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+        .section-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        .section-card .section-title { font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .navbar { background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 60%, #1d4ed8 100%); }
+    </style>
+</head>
+<body class="bg-[#f5f6f8] min-h-screen flex flex-col">
+    @{
+        var isAuthenticated = User.Identity?.IsAuthenticated == true;
+    }
+
+    <nav class="navbar text-white shadow-lg flex-shrink-0">
+        <div class="max-w-[90rem] mx-auto px-6">
+            <div class="flex items-center justify-between h-14">
+                <a href="/" class="font-bold text-lg flex items-center gap-2 px-2 py-2 hover:bg-white/10 rounded-lg transition">
+                    <span class="text-xl">📦</span> ImportDataToERP
+                </a>
+
+                @if (isAuthenticated)
+                {
+                    <div class="flex items-center gap-1">
+                        <a asp-controller="Home" asp-action="Index" class="px-3 py-2 hover:bg-white/10 rounded-lg transition text-sm">🏠 首頁</a>
+
+                        <div class="relative group">
+                            <button class="px-3 py-2 hover:bg-white/10 rounded-lg transition text-sm">⚙️ 系統功能 ▾</button>
+                            <div class="absolute right-0 hidden group-hover:block bg-white text-gray-800 rounded-xl shadow-2xl min-w-44 z-50 border border-gray-100 overflow-hidden">
+                                <a asp-controller="User" asp-action="Index" class="block px-4 py-2.5 hover:bg-blue-50 text-sm border-b border-gray-50">👤 使用者資料維護</a>
+                            </div>
+                        </div>
+
+                        <div class="relative group">
+                            <button class="px-3 py-2 hover:bg-white/10 rounded-lg transition text-sm">📥 匯入ERP資料管理 ▾</button>
+                            <div class="absolute right-0 hidden group-hover:block bg-white text-gray-800 rounded-xl shadow-2xl min-w-52 z-50 border border-gray-100 overflow-hidden">
+                                <a asp-controller="QuotationImport" asp-action="Index" class="block px-4 py-2.5 hover:bg-blue-50 text-sm border-b border-gray-50">📄 匯入報價單To ERP</a>
+                                <a asp-controller="OrderImport" asp-action="Index" class="block px-4 py-2.5 hover:bg-blue-50 text-sm border-b border-gray-50">📋 匯入訂單To ERP</a>
+                                <a asp-controller="OrderChangeImport" asp-action="Index" class="block px-4 py-2.5 hover:bg-blue-50 text-sm">🔄 匯入訂單變更To ERP</a>
+                            </div>
+                        </div>
+
+                        <div class="ml-5 pl-5 border-l border-white/20 flex items-center gap-3">
+                            <span class="text-sm text-white/80">👤 @User.Identity?.Name</span>
+                            <form asp-controller="Account" asp-action="Logout" method="post" class="inline">
+                                <button type="submit" class="text-sm px-3 py-1.5 hover:bg-red-500/80 rounded-lg transition">🚪 登出</button>
+                            </form>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-1 w-full">
+        <div class="max-w-[90rem] mx-auto px-6 py-6">
+            @RenderBody()
+        </div>
+    </main>
+
+    <footer class="bg-white/80 border-t border-gray-100 py-4 text-center text-gray-400 text-xs flex-shrink-0">
+        &copy; @DateTime.Now.Year ImportDataToERP
+    </footer>
+
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>
