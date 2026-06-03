@@ -68,7 +68,8 @@ public class OrderChangeImportService
 
             var sql = @"
                 INSERT INTO OrderChangeHeaders 
-                    (ImportBatchNo, SoErpPrefix, SoErpNo, OriginalOrderNo,
+                    (ImportBatchNo, ErpOrderNo, ChangeType,
+                     SoErpPrefix, SoErpNo, OriginalOrderNo,
                      DocDate, CustomerPurchaseOrder, CustomerCode, CustomerName,
                      CustomerAddressFirst, CustomerAddressSecond,
                      DepartmentId, SalesRep,
@@ -80,7 +81,8 @@ public class OrderChangeImportService
                      ClosureStatus, ConfirmStatus,
                      ImportStatus, ImportedAt, TransferStatus, CreatedAt)
                 VALUES 
-                    (@ImportBatchNo, @SoErpPrefix, @SoErpNo, @OriginalOrderNo,
+                    (@ImportBatchNo, @ErpOrderNo, @ChangeType,
+                     @SoErpPrefix, @SoErpNo, @OriginalOrderNo,
                      @DocDate, @CustomerPurchaseOrder, @CustomerCode, @CustomerName,
                      @CustomerAddressFirst, @CustomerAddressSecond,
                      @DepartmentId, @SalesRep,
@@ -109,6 +111,7 @@ public class OrderChangeImportService
         using var conn = _db.CreateConnection();
         var sql = @"
             UPDATE OrderChangeHeaders SET
+                ChangeType             = @ChangeType,
                 SoErpPrefix            = @SoErpPrefix,
                 SoErpNo                = @SoErpNo,
                 OriginalOrderNo        = @OriginalOrderNo,
@@ -349,7 +352,8 @@ public class OrderChangeImportService
 
                 var insertHeaderSql = @"
                     INSERT INTO OrderChangeHeaders 
-                        (ImportBatchNo, SoErpPrefix, SoErpNo, OriginalOrderNo,
+                        (ImportBatchNo, ErpOrderNo, ChangeType,
+                         SoErpPrefix, SoErpNo, OriginalOrderNo,
                          DocDate, CustomerPurchaseOrder, CustomerCode, CustomerName,
                          CustomerAddressFirst, CustomerAddressSecond,
                          DepartmentId, SalesRep,
@@ -361,7 +365,8 @@ public class OrderChangeImportService
                          ClosureStatus, ConfirmStatus,
                          ImportStatus, ImportedAt, TransferStatus, CreatedAt)
                     VALUES 
-                        (@ImportBatchNo, @SoErpPrefix, @SoErpNo, @OriginalOrderNo,
+                        (@ImportBatchNo, @ErpOrderNo, @ChangeType,
+                         @SoErpPrefix, @SoErpNo, @OriginalOrderNo,
                          @DocDate, @CustomerPurchaseOrder, @CustomerCode, @CustomerName,
                          @CustomerAddressFirst, @CustomerAddressSecond,
                          @DepartmentId, @SalesRep,

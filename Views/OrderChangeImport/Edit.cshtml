@@ -40,6 +40,13 @@
             @TempData["Success"]
         </div>
     }
+    @if (TempData["Error"] != null)
+    {
+        <div class="flex items-center gap-2 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl mb-4 text-sm">
+            <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>
+            @TempData["Error"]
+        </div>
+    }
 
     <!-- ========== 單頭變更區 ========== -->
     <div class="section-card bg-gradient-to-br from-blue-50/40 to-white">
@@ -290,7 +297,7 @@
             @if (detailList.Count == 0)
             {
                 <!-- 空明細狀態：不在 table 內 -->
-                <div class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
+                <div id="emptyDetailState" class="flex flex-col items-center justify-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
                     <div class="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-3">
                         <svg class="w-7 h-7 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
                     </div>
@@ -373,6 +380,114 @@
 <script>
 const headerId = @Model.Id;
 
+// ── 表格範本 (空狀態 → 表格轉換用) ──
+function ensureTable() {
+    if (document.getElementById('detailTable')) return;
+    const emptyEl = document.getElementById('emptyDetailState');
+    if (emptyEl) emptyEl.style.display = 'none';
+    const container = document.createElement('div');
+    container.className = 'overflow-x-auto max-h-[55vh] overflow-y-auto rounded-xl border border-gray-200';
+    container.id = 'detailTableContainer';
+    container.innerHTML =
+        '<table class="min-w-full" id="detailTable">' +
+        '<thead class="bg-gray-50/80 sticky top-0 z-10 backdrop-blur">' +
+        '<tr>' +
+        '<th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">品號</th>' +
+        '<th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">品名</th>' +
+        '<th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">原數量</th>' +
+        '<th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">新數量</th>' +
+        '<th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">原單價</th>' +
+        '<th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">新單價</th>' +
+        '<th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">原交期</th>' +
+        '<th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">新交期</th>' +
+        '<th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">操作</th>' +
+        '</tr></thead>' +
+        '<tbody class="divide-y divide-gray-50 bg-white"></tbody>' +
+        '</table>';
+    emptyEl.parentNode.insertBefore(container, emptyEl.nextSibling);
+}
+
+// ── 建構新明細列 (edit 模式) ──
+function buildNewRowHtml(detail) {
+    const id = detail.id;
+    const v = (s) => (s || '');
+    return '<tr id="row-' + id + '" class="detail-row hover:bg-blue-50/30 bg-blue-50/50">' +
+        '<td class="px-3 py-2 view-mode hidden font-mono text-xs text-gray-700">' + v(detail.productCode) + '</td>' +
+        '<td class="px-3 py-2 view-mode hidden text-sm">' + v(detail.productName) + '</td>' +
+        '<td class="px-3 py-2 view-mode hidden text-sm text-right">' + (detail.originalQuantity != null ? Number(detail.originalQuantity).toLocaleString(undefined,{minimumFractionDigits:2}) : '') + '</td>' +
+        '<td class="px-3 py-2 view-mode hidden text-sm text-right font-medium">' + (detail.newQuantity != null ? Number(detail.newQuantity).toLocaleString(undefined,{minimumFractionDigits:2}) : '') + '</td>' +
+        '<td class="px-3 py-2 view-mode hidden text-sm text-right">' + (detail.originalUnitPrice != null ? Number(detail.originalUnitPrice).toLocaleString(undefined,{minimumFractionDigits:2}) : '') + '</td>' +
+        '<td class="px-3 py-2 view-mode hidden text-sm text-right font-medium">' + (detail.newUnitPrice != null ? Number(detail.newUnitPrice).toLocaleString(undefined,{minimumFractionDigits:2}) : '') + '</td>' +
+        '<td class="px-3 py-2 view-mode hidden text-sm text-center">' + v(detail.originalDeliveryDate) + '</td>' +
+        '<td class="px-3 py-2 view-mode hidden text-sm text-center font-medium">' + v(detail.newDeliveryDate) + '</td>' +
+        '<td class="px-3 py-2 edit-mode"><input class="w-24 input-modern text-xs py-1 font-mono" value="' + v(detail.productCode) + '" data-field="ProductCode" /></td>' +
+        '<td class="px-3 py-2 edit-mode"><input class="w-28 input-modern text-xs py-1" value="' + v(detail.productName) + '" data-field="ProductName" /></td>' +
+        '<td class="px-3 py-2 edit-mode"><input class="w-20 input-modern text-xs py-1 text-right" value="' + v(detail.originalQuantity) + '" data-field="OriginalQuantity" type="number" step="any" /></td>' +
+        '<td class="px-3 py-2 edit-mode"><input class="w-20 input-modern text-xs py-1 text-right" value="' + v(detail.newQuantity) + '" data-field="NewQuantity" type="number" step="any" /></td>' +
+        '<td class="px-3 py-2 edit-mode"><input class="w-20 input-modern text-xs py-1 text-right" value="' + v(detail.originalUnitPrice) + '" data-field="OriginalUnitPrice" type="number" step="any" /></td>' +
+        '<td class="px-3 py-2 edit-mode"><input class="w-20 input-modern text-xs py-1 text-right" value="' + v(detail.newUnitPrice) + '" data-field="NewUnitPrice" type="number" step="any" /></td>' +
+        '<td class="px-3 py-2 edit-mode"><input class="w-28 input-modern text-xs py-1 text-center" value="' + v(detail.originalDeliveryDate) + '" data-field="OriginalDeliveryDate" type="date" /></td>' +
+        '<td class="px-3 py-2 edit-mode"><input class="w-28 input-modern text-xs py-1 text-center" value="' + v(detail.newDeliveryDate) + '" data-field="NewDeliveryDate" type="date" /></td>' +
+        '<td class="px-3 py-2 text-center whitespace-nowrap">' +
+        '<span class="view-mode hidden flex items-center justify-center gap-1.5">' +
+        '<button onclick="editRow(' + id + ')" class="btn px-2 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100">編輯</button>' +
+        '<button onclick="deleteRow(' + id + ')" class="btn px-2 py-1 rounded-md text-xs font-medium bg-red-50 text-red-500 hover:bg-red-100">刪除</button>' +
+        '</span>' +
+        '<span class="edit-mode flex items-center justify-center gap-1.5">' +
+        '<button onclick="saveRow(' + id + ')" class="btn px-2 py-1 rounded-md text-xs font-medium bg-green-50 text-green-600 hover:bg-green-100">儲存</button>' +
+        '<button onclick="cancelNewRow(' + id + ')" class="btn px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-500 hover:bg-gray-200">取消</button>' +
+        '</span>' +
+        '</td>' +
+        '</tr>';
+}
+
+// ── 新增明細：直接建立並進入編輯模式 (一鍵到位) ──
+async function addNewRow() {
+    const data = {
+        headerId: headerId,
+        productCode: '', productName: '',
+        originalQuantity: null, newQuantity: null,
+        originalUnitPrice: null, newUnitPrice: null,
+        originalDeliveryDate: null, newDeliveryDate: null
+    };
+    try {
+        const resp = await fetch('/OrderChangeImport/CreateDetail', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!resp.ok) throw new Error('Failed');
+        const result = await resp.json();
+        const detail = result.detail;
+
+        ensureTable();
+        const tbody = document.querySelector('#detailTable tbody');
+        tbody.insertAdjacentHTML('beforeend', buildNewRowHtml(detail));
+
+        // Focus 第一格
+        const newRow = document.getElementById('row-' + detail.id);
+        const firstInput = newRow.querySelector('input[data-field="ProductCode"]');
+        if (firstInput) firstInput.focus();
+
+        updateDetailCount();
+    } catch(e) {
+        alert('新增失敗');
+    }
+}
+
+// ── 取消未儲存的新行：刪除 → 移除 DOM ──
+async function cancelNewRow(id) {
+    await fetch('/OrderChangeImport/DeleteDetail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id })
+    }).catch(() => {});
+    const row = document.getElementById('row-' + id);
+    if (row) row.remove();
+    if (document.querySelectorAll('.detail-row').length === 0) location.reload();
+    updateDetailCount();
+}
+
 function editRow(id) {
     const row = document.getElementById('row-' + id);
     row.querySelectorAll('.view-mode').forEach(td => td.classList.add('hidden'));
@@ -394,7 +509,8 @@ async function saveRow(id) {
         let val = input.value;
         if (input.type === 'number') val = val ? parseFloat(val) : null;
         if (input.type === 'date') val = val || null;
-        data[input.dataset.field] = val;
+        const field = input.dataset.field.charAt(0).toLowerCase() + input.dataset.field.slice(1);
+        data[field] = val;
     });
 
     try {
@@ -406,20 +522,28 @@ async function saveRow(id) {
         if (!resp.ok) throw new Error('Failed');
 
         const cells = row.querySelectorAll('.view-mode');
-        cells[0].textContent = data.ProductCode || '';
-        cells[1].textContent = data.ProductName || '';
-        cells[2].textContent = data.OriginalQuantity != null ? Number(data.OriginalQuantity).toLocaleString(undefined, {minimumFractionDigits:2}) : '';
-        cells[3].textContent = data.NewQuantity != null ? Number(data.NewQuantity).toLocaleString(undefined, {minimumFractionDigits:2}) : '';
-        cells[4].textContent = data.OriginalUnitPrice != null ? Number(data.OriginalUnitPrice).toLocaleString(undefined, {minimumFractionDigits:2}) : '';
-        cells[5].textContent = data.NewUnitPrice != null ? Number(data.NewUnitPrice).toLocaleString(undefined, {minimumFractionDigits:2}) : '';
-        cells[6].textContent = data.OriginalDeliveryDate || '';
-        cells[7].textContent = data.NewDeliveryDate || '';
-        cancelRow(id);
+        cells[0].textContent = data.productCode || '';
+        cells[1].textContent = data.productName || '';
+        cells[2].textContent = data.originalQuantity != null ? Number(data.originalQuantity).toLocaleString(undefined, {minimumFractionDigits:2}) : '';
+        cells[3].textContent = data.newQuantity != null ? Number(data.newQuantity).toLocaleString(undefined, {minimumFractionDigits:2}) : '';
+        cells[4].textContent = data.originalUnitPrice != null ? Number(data.originalUnitPrice).toLocaleString(undefined, {minimumFractionDigits:2}) : '';
+        cells[5].textContent = data.newUnitPrice != null ? Number(data.newUnitPrice).toLocaleString(undefined, {minimumFractionDigits:2}) : '';
+        cells[6].textContent = data.originalDeliveryDate || '';
+        cells[7].textContent = data.newDeliveryDate || '';
 
         // Refresh highlight on changed values
-        if (data.NewQuantity != data.OriginalQuantity) cells[3].classList.add('text-orange-600'); else cells[3].classList.remove('text-orange-600');
-        if (data.NewUnitPrice != data.OriginalUnitPrice) cells[5].classList.add('text-orange-600'); else cells[5].classList.remove('text-orange-600');
-        if (data.NewDeliveryDate != data.OriginalDeliveryDate) cells[7].classList.add('text-orange-600'); else cells[7].classList.remove('text-orange-600');
+        if (data.newQuantity != data.originalQuantity) cells[3].classList.add('text-orange-600'); else cells[3].classList.remove('text-orange-600');
+        if (data.newUnitPrice != data.originalUnitPrice) cells[5].classList.add('text-orange-600'); else cells[5].classList.remove('text-orange-600');
+        if (data.newDeliveryDate != data.originalDeliveryDate) cells[7].classList.add('text-orange-600'); else cells[7].classList.remove('text-orange-600');
+
+        // 首次儲存後，取消按鈕改回標準 cancelRow
+        const cancelBtn = row.querySelector('.edit-mode button[onclick*="cancelNewRow"]');
+        if (cancelBtn) {
+            cancelBtn.setAttribute('onclick', 'cancelRow(' + id + ')');
+            cancelBtn.textContent = '取消';
+        }
+
+        cancelRow(id);
     } catch(e) {
         alert('儲存失敗: ' + e.message);
     }
@@ -441,27 +565,6 @@ async function deleteRow(id) {
         updateDetailCount();
     } catch(e) {
         alert('刪除失敗');
-    }
-}
-
-async function addNewRow() {
-    const data = {
-        headerId: headerId,
-        productCode: '', productName: '',
-        originalQuantity: null, newQuantity: null,
-        originalUnitPrice: null, newUnitPrice: null,
-        originalDeliveryDate: null, newDeliveryDate: null
-    };
-    try {
-        const resp = await fetch('/OrderChangeImport/CreateDetail', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-        if (!resp.ok) throw new Error('Failed');
-        location.reload();
-    } catch(e) {
-        alert('新增失敗');
     }
 }
 

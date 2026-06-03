@@ -38,9 +38,17 @@ public class OrderChangeImportController : Controller
     {
         if (!ModelState.IsValid) return View("Edit", header);
 
-        var id = await _service.CreateHeaderAsync(header);
-        TempData["Success"] = $"已新增變更單，匯入單號：{header.ImportBatchNo}";
-        return RedirectToAction(nameof(Edit), new { id });
+        try
+        {
+            var id = await _service.CreateHeaderAsync(header);
+            TempData["Success"] = $"已新增變更單，匯入單號：{header.ImportBatchNo}";
+            return RedirectToAction(nameof(Edit), new { id });
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = $"資料庫錯誤：{ex.Message}";
+            return View("Edit", header);
+        }
     }
 
     // ========== 編輯單頭 + 單身 ==========
@@ -66,10 +74,19 @@ public class OrderChangeImportController : Controller
             return View(header);
         }
 
-        header.Id = id;
-        await _service.UpdateHeaderAsync(header);
-        TempData["Success"] = "變更單頭已更新";
-        return RedirectToAction(nameof(Edit), new { id });
+        try
+        {
+            header.Id = id;
+            await _service.UpdateHeaderAsync(header);
+            TempData["Success"] = "變更單頭已更新";
+            return RedirectToAction(nameof(Edit), new { id });
+        }
+        catch (Exception ex)
+        {
+            TempData["Error"] = $"資料庫錯誤：{ex.Message}";
+            ViewBag.Details = await _service.GetDetailsByHeaderIdAsync(id);
+            return View(header);
+        }
     }
 
     // ========== 拋轉 ERP ==========

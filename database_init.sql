@@ -134,6 +134,7 @@ BEGIN
         Id                  INT IDENTITY(1,1) PRIMARY KEY,
         ImportBatchNo       NVARCHAR(20)   NOT NULL,
         ErpOrderNo          NVARCHAR(50)   NULL,
+        ChangeType          NVARCHAR(20)   NOT NULL DEFAULT N'',  -- 數量變更/單價變更/交期變更/取消
         SoErpPrefix         NVARCHAR(10)   NULL,
         SoErpNo             NVARCHAR(20)   NULL,
         OriginalOrderNo     NVARCHAR(50)   NOT NULL,
@@ -193,12 +194,10 @@ BEGIN
 END
 GO
 
--- 保留舊表（若有）
-IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'OrderChangeImports') AND type = 'U')
+-- OrderChangeImports：不存在則建立，已存在則保留
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'OrderChangeImports') AND type = 'U')
 BEGIN
-    PRINT N'偵測到舊版 OrderChangeImports 表，已保留';
-END
-GO
+    CREATE TABLE OrderChangeImports (
         Id                    INT IDENTITY(1,1) PRIMARY KEY,
         OriginalOrderNo       NVARCHAR(50)   NOT NULL,
         ChangeNo              NVARCHAR(50)   NOT NULL,
@@ -218,6 +217,10 @@ GO
         ImportedAt            DATETIME2      NULL,
         CreatedAt             DATETIME2      NOT NULL DEFAULT GETDATE()
     );
+END
+ELSE
+BEGIN
+    PRINT N'偵測到舊版 OrderChangeImports 表，已保留 (可手動刪除)';
 END
 GO
 
@@ -255,58 +258,6 @@ BEGIN
         ALTER TABLE OrderImportHeaders ADD TransferMessage NVARCHAR(500) NULL;
         PRINT N'已新增 OrderImportHeaders.TransferMessage 欄位';
     END
-END
-GO
-
--- ============================================
--- 8. 訂單變更匯入 - 單頭
--- ============================================
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'OrderChangeHeaders') AND type = 'U')
-BEGIN
-    CREATE TABLE OrderChangeHeaders (
-        Id              INT IDENTITY(1,1) PRIMARY KEY,
-        ImportBatchNo   NVARCHAR(20)   NOT NULL,       -- YYYYMMDD + 3碼流水號
-        ErpOrderNo      NVARCHAR(50)   NULL,           -- 拋轉後ERP單號
-        OriginalOrderNo NVARCHAR(50)   NOT NULL,       -- 原訂單號
-        ChangeType      NVARCHAR(20)   NOT NULL,       -- 數量變更/單價變更/交期變更/取消
-        CustomerCode    NVARCHAR(50)   NOT NULL,       -- 客戶代號
-        CustomerName    NVARCHAR(100)  NOT NULL,       -- 客戶名稱
-        ChangeReason    NVARCHAR(500)  NULL,           -- 變更原因
-        ImportStatus    NVARCHAR(20)   NOT NULL DEFAULT N'待匯入',
-        ImportedAt      DATETIME2      NULL,
-        TransferStatus  INT            NOT NULL DEFAULT 1,   -- 1=未拋轉 2=已拋轉 3=拋轉失敗
-        TransferMessage NVARCHAR(500)  NULL,
-        CreatedAt       DATETIME2      NOT NULL DEFAULT GETDATE()
-    );
-
-    CREATE UNIQUE INDEX IX_OrderChangeHeaders_BatchNo ON OrderChangeHeaders(ImportBatchNo);
-END
-GO
-
--- ============================================
--- 9. 訂單變更匯入 - 單身
--- ============================================
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'OrderChangeDetails') AND type = 'U')
-BEGIN
-    CREATE TABLE OrderChangeDetails (
-        Id                  INT IDENTITY(1,1) PRIMARY KEY,
-        HeaderId            INT            NOT NULL,       -- 關聯 OrderChangeHeaders.Id
-        ProductCode         NVARCHAR(50)   NULL,           -- 品號
-        ProductName         NVARCHAR(100)  NULL,           -- 品名
-        OriginalQuantity    DECIMAL(18,4)  NULL,           -- 原數量
-        NewQuantity         DECIMAL(18,4)  NULL,           -- 新數量
-        OriginalUnitPrice   DECIMAL(18,4)  NULL,           -- 原單價
-        NewUnitPrice        DECIMAL(18,4)  NULL,           -- 新單價
-        OriginalDeliveryDate DATETIME2     NULL,           -- 原交期
-        NewDeliveryDate     DATETIME2      NULL,           -- 新交期
-        CreatedAt           DATETIME2      NOT NULL DEFAULT GETDATE(),
-
-        CONSTRAINT FK_OrderChangeDetails_Header
-            FOREIGN KEY (HeaderId) REFERENCES OrderChangeHeaders(Id)
-            ON DELETE CASCADE
-    );
-
-    CREATE INDEX IX_OrderChangeDetails_HeaderId ON OrderChangeDetails(HeaderId);
 END
 GO
 
