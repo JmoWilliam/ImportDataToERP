@@ -404,7 +404,13 @@ function ensureTable() {
         '</tr></thead>' +
         '<tbody class="divide-y divide-gray-50 bg-white"></tbody>' +
         '</table>';
-    emptyEl.parentNode.insertBefore(container, emptyEl.nextSibling);
+    if (emptyEl) {
+        emptyEl.parentNode.insertBefore(container, emptyEl.nextSibling);
+    } else {
+        // fallback: 直接插入頁面
+        const section = document.querySelector('.section-card');
+        if (section) section.appendChild(container);
+    }
 }
 
 // ── 建構新明細列 (edit 模式) ──
@@ -471,7 +477,7 @@ async function addNewRow() {
 
         updateDetailCount();
     } catch(e) {
-        alert('新增失敗');
+        alert('新增失敗: ' + e.message);
     }
 }
 
