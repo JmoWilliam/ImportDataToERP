@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "importdatatoerp",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "D:/Project/ImportDataToERP/ImportDataToERP.csproj", "--urls", "http://localhost:5164"],
+      "port": 5164
+    }
+  ]
+}

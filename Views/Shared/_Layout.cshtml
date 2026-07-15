@@ -42,15 +42,15 @@
     }
 
     <nav class="navbar text-white shadow-lg flex-shrink-0">
-        <div class="max-w-[90rem] mx-auto px-6">
+        <div class="max-w-[90rem] mx-auto px-4 sm:px-6">
             <div class="flex items-center justify-between h-14">
                 <a href="/" class="font-bold text-lg flex items-center gap-2 px-2 py-2 hover:bg-white/10 rounded-lg transition">
-                    <span class="text-xl">📦</span> ImportDataToERP
+                    <span class="text-xl">📦</span> <span class="hidden sm:inline">ImportDataToERP</span>
                 </a>
 
                 @if (isAuthenticated)
                 {
-                    <div class="flex items-center gap-1">
+                    <div class="hidden md:flex items-center gap-1">
                         <a asp-controller="Home" asp-action="Index" class="px-3 py-2 hover:bg-white/10 rounded-lg transition text-sm">🏠 首頁</a>
 
                         <div class="relative group">
@@ -76,13 +76,36 @@
                             </form>
                         </div>
                     </div>
+
+                    <button type="button" onclick="document.getElementById('mobileMenu').classList.toggle('hidden')" class="md:hidden p-2 hover:bg-white/10 rounded-lg transition" aria-label="開啟選單">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+                    </button>
                 }
             </div>
+
+            @if (isAuthenticated)
+            {
+                <div id="mobileMenu" class="hidden md:hidden pb-4 pt-2 mt-1 border-t border-white/10 space-y-1">
+                    <a asp-controller="Home" asp-action="Index" class="block px-3 py-2.5 hover:bg-white/10 rounded-lg transition text-sm">🏠 首頁</a>
+                    <div class="px-3 pt-2 pb-1 text-xs uppercase tracking-wider text-white/50">系統功能</div>
+                    <a asp-controller="User" asp-action="Index" class="block px-3 py-2.5 hover:bg-white/10 rounded-lg transition text-sm">👤 使用者資料維護</a>
+                    <div class="px-3 pt-2 pb-1 text-xs uppercase tracking-wider text-white/50">匯入ERP資料管理</div>
+                    <a asp-controller="QuotationImport" asp-action="Index" class="block px-3 py-2.5 hover:bg-white/10 rounded-lg transition text-sm">📄 匯入報價單To ERP</a>
+                    <a asp-controller="OrderImport" asp-action="Index" class="block px-3 py-2.5 hover:bg-white/10 rounded-lg transition text-sm">📋 匯入訂單To ERP</a>
+                    <a asp-controller="OrderChangeImport" asp-action="Index" class="block px-3 py-2.5 hover:bg-white/10 rounded-lg transition text-sm">🔄 匯入訂單變更To ERP</a>
+                    <div class="flex items-center justify-between px-3 pt-3 mt-2 border-t border-white/10">
+                        <span class="text-sm text-white/80">👤 @User.Identity?.Name</span>
+                        <form asp-controller="Account" asp-action="Logout" method="post" class="inline">
+                            <button type="submit" class="text-sm px-3 py-1.5 hover:bg-red-500/80 rounded-lg transition">🚪 登出</button>
+                        </form>
+                    </div>
+                </div>
+            }
         </div>
     </nav>
 
     <main class="flex-1 w-full">
-        <div class="max-w-[90rem] mx-auto px-6 py-6">
+        <div class="max-w-[90rem] mx-auto px-4 sm:px-6 py-6">
             @RenderBody()
         </div>
     </main>
