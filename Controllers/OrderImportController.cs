@@ -157,7 +157,7 @@ public class OrderImportController : Controller
         }
 
         using var stream = file.OpenReadStream();
-        var model = _service.ParseExcel(stream, file.FileName);
+        var model = await _service.ParseExcelAsync(stream, file.FileName);
 
         if (model.Errors.Count > 0)
         {

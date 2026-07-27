@@ -168,7 +168,7 @@ public class OrderImportService
 
     // ========== Excel 解析 / 匯入 / 範本 ==========
 
-    public OrderImportViewModel ParseExcel(Stream fileStream, string fileName)
+    public async Task<OrderImportViewModel> ParseExcelAsync(Stream fileStream, string fileName)
     {
         var result = new OrderImportViewModel { FileName = fileName };
         var rawRows = new List<(OrderImportHeader hdr, OrderImportDetail dtl)>();
@@ -224,6 +224,8 @@ public class OrderImportService
             result.Errors.Add("Excel 無有效資料列");
             return result;
         }
+
+        await FillMissingProductNamesAsync(rawRows.Select(r => r.dtl));
 
         var groups = rawRows
             .GroupBy(r => new
@@ -630,6 +632,43 @@ public class OrderImportService
     }
 
     // ========== Private Helpers ==========
+
+    /// <summary>Excel 未填品名時，依品號查詢 ERP 品號主檔 (INVMB.MB001/MB002) 帶出品名</summary>
+    private async Task FillMissingProductNamesAsync(IEnumerable<OrderImportDetail> details)
+    {
+        var codes = details
+            .Where(d => !string.IsNullOrWhiteSpace(d.ProductCode) && string.IsNullOrWhiteSpace(d.ProductName))
+            .Select(d => d.ProductCode!.Trim())
+            .Distinct()
+            .ToList();
+
+        if (codes.Count == 0) return;
+
+        try
+        {
+            using var erpConn = new SqlConnection(_erpConnectionString);
+            var rows = await erpConn.QueryAsync<ProductLookup>(
+                "SELECT RTRIM(MB001) AS ProductCode, RTRIM(MB002) AS ProductName FROM INVMB WHERE RTRIM(MB001) IN @Codes",
+                new { Codes = codes });
+
+            var map = rows.ToDictionary(r => r.ProductCode, r => r.ProductName, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var d in details)
+            {
+                if (!string.IsNullOrWhiteSpace(d.ProductCode) && string.IsNullOrWhiteSpace(d.ProductName)
+                    && map.TryGetValue(d.ProductCode.Trim(), out var name))
+                {
+                    d.ProductName = name;
+                }
+            }
+        }
+        catch
+        {
+            // ERP 無法連線時略過帶入品名，維持原有空白讓使用者手動補齊
+        }
+    }
+
+    private sealed record ProductLookup(string ProductCode, string ProductName);
 
     private async Task<string> GenerateBatchNoAsync(SqlConnection conn, SqlTransaction transaction, string today)
     {

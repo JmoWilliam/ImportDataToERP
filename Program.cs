@@ -27,7 +27,6 @@ var erpConnectionString = builder.Configuration.GetConnectionString("ErpConnecti
 
 // 註冊 Services
 builder.Services.AddScoped<UserService>();
-builder.Services.AddScoped<QuotationImportService>();
 builder.Services.AddScoped<OrderImportService>(sp =>
     new OrderImportService(sp.GetRequiredService<DbConnectionFactory>(), erpConnectionString));
 builder.Services.AddScoped<OrderChangeImportService>(sp =>
