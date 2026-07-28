@@ -109,6 +109,11 @@ public class OrderChangeImportService
     public async Task<bool> UpdateHeaderAsync(OrderChangeHeader header)
     {
         using var conn = _db.CreateConnection();
+        var transferStatus = await conn.ExecuteScalarAsync<int?>(
+            "SELECT TransferStatus FROM OrderChangeHeaders WHERE Id = @Id", new { header.Id });
+        if (transferStatus == 2)
+            throw new InvalidOperationException("此變更單已拋轉ERP，單頭無法再編輯，避免與ERP資料不一致");
+
         var sql = @"
             UPDATE OrderChangeHeaders SET
                 ChangeType             = @ChangeType,
@@ -150,6 +155,11 @@ public class OrderChangeImportService
         using var transaction = conn.BeginTransaction();
         try
         {
+            var transferStatus = await conn.ExecuteScalarAsync<int?>(
+                "SELECT TransferStatus FROM OrderChangeHeaders WHERE Id = @Id", new { Id = id }, transaction);
+            if (transferStatus == 2)
+                throw new InvalidOperationException("此變更單已拋轉ERP，無法刪除，避免與ERP資料不一致");
+
             await conn.ExecuteAsync("DELETE FROM OrderChangeDetails WHERE HeaderId = @Id", new { Id = id }, transaction);
             var rows = await conn.ExecuteAsync("DELETE FROM OrderChangeHeaders WHERE Id = @Id", new { Id = id }, transaction);
             await transaction.CommitAsync();
@@ -167,6 +177,11 @@ public class OrderChangeImportService
     public async Task<int> CreateDetailAsync(OrderChangeDetail detail)
     {
         using var conn = _db.CreateConnection();
+        var transferStatus = await conn.ExecuteScalarAsync<int?>(
+            "SELECT TransferStatus FROM OrderChangeHeaders WHERE Id = @HeaderId", new { detail.HeaderId });
+        if (transferStatus == 2)
+            throw new InvalidOperationException("此變更單已拋轉ERP，無法新增明細，避免與ERP資料不一致");
+
         detail.CreatedAt = DateTime.Now;
         var sql = @"
             INSERT INTO OrderChangeDetails
@@ -186,6 +201,13 @@ public class OrderChangeImportService
     public async Task<bool> UpdateDetailAsync(OrderChangeDetail detail)
     {
         using var conn = _db.CreateConnection();
+        var transferStatus = await conn.ExecuteScalarAsync<int?>(
+            @"SELECT h.TransferStatus FROM OrderChangeDetails d
+              JOIN OrderChangeHeaders h ON h.Id = d.HeaderId
+              WHERE d.Id = @Id", new { detail.Id });
+        if (transferStatus == 2)
+            throw new InvalidOperationException("此變更單已拋轉ERP，明細無法再編輯，避免與ERP資料不一致");
+
         var sql = @"
             UPDATE OrderChangeDetails SET
                 ProductCode         = @ProductCode,
@@ -203,6 +225,13 @@ public class OrderChangeImportService
     public async Task<bool> DeleteDetailAsync(int id)
     {
         using var conn = _db.CreateConnection();
+        var transferStatus = await conn.ExecuteScalarAsync<int?>(
+            @"SELECT h.TransferStatus FROM OrderChangeDetails d
+              JOIN OrderChangeHeaders h ON h.Id = d.HeaderId
+              WHERE d.Id = @Id", new { Id = id });
+        if (transferStatus == 2)
+            throw new InvalidOperationException("此變更單已拋轉ERP，明細無法刪除，避免與ERP資料不一致");
+
         return await conn.ExecuteAsync("DELETE FROM OrderChangeDetails WHERE Id = @Id", new { Id = id }) > 0;
     }
 
@@ -506,7 +535,6 @@ public class OrderChangeImportService
             return "部分明細無品號，無法拋轉";
 
         var dateNow = DateTime.Now.ToString("yyyyMMdd");
-        var timeNow = DateTime.Now.ToString("HH:mm:ss");
         var erpPrefix = header.SoErpPrefix ?? "CHG";
         var erpNo = "";
         string companyNo = "";
@@ -530,10 +558,10 @@ public class OrderChangeImportService
 
                 // 取得廠別 (CMSMB)
                 var factoryResult = await erpConn.QueryFirstOrDefaultAsync<dynamic>(
-                    "SELECT TOP 1 RTRIM(LTRIM(MB001)) MB001 FROM CMSMB WHERE COMPANY = (SELECT TOP 1 COMPANY FROM CMSMB)");
+                    "SELECT TOP 1 RTRIM(LTRIM(COMPANY)) COMPANY FROM CMSMB");
                 if (factoryResult != null)
                 {
-                    companyNo = factoryResult.MB001 ?? "";
+                    companyNo = factoryResult.COMPANY ?? "";
                 }
 
                 // 檢查單據設定 CMSMQ（用 COPTE 的單別查詢編碼規則）
@@ -570,14 +598,14 @@ public class OrderChangeImportService
                 erpNo = datePart + currentNum.ToString(new string('0', lineLength));
 
                 // ========== 寫入 COPTE (訂單變更單頭) ==========
-                // TE001-TE082: 新值, TE103-TE182: 原值 (無 COPTC 查詢故映射相同)
+                // TE001-TE078: 新值, TE103/TE107-TE152/TE163-TE178: 原值 (此ERP版本欄位較少，依 訂單相關資料表.xlsx 比對)
                 var coptEParams = new
                 {
                     COMPANY = companyNo, CREATOR = "IMPORT", USR_GROUP = "",
-                    CREATE_DATE = dateNow, CREATE_TIME = timeNow, CREATE_AP = "IMPORT", CREATE_PRID = "BM",
-                    MODIFIER = "", MODI_DATE = "", MODI_TIME = "", MODI_AP = "", MODI_PRID = "", FLAG = "1",
+                    CREATE_DATE = dateNow,
+                    MODIFIER = "", MODI_DATE = "", FLAG = "1",
 
-                    // ---- 新值 TE001-TE082 ----
+                    // ---- 新值 TE001-TE078 ----
                     TE001 = erpPrefix,
                     TE002 = erpNo,
                     TE003 = "0001",
@@ -623,16 +651,9 @@ public class OrderChangeImportService
                     TE069 = header.TaxNo ?? "",
                     TE070 = "", TE071 = "", TE072 = "", TE073 = "", TE074 = "",
                     TE075 = "", TE076 = "", TE077 = "", TE078 = "",
-                    TE079 = header.DepositPartial ?? "N",
-                    TE080 = header.DetailMultiTax ?? "N",
-                    TE081 = "",
-                    TE082 = "",
 
-                    // ---- 原值 TE103-TE182（映射同新值，無 COPTC 可查）----
+                    // ---- 原值 TE103, TE107-TE152, TE163-TE178（此ERP版本無 TE104-106/TE153-162/TE179-182）----
                     TE103 = "0001",
-                    TE104 = docDateStr,
-                    TE105 = header.ClosureStatus ?? "N",
-                    TE106 = changeReason,
                     TE107 = header.CustomerCode ?? "",
                     TE108 = header.DepartmentId ?? "",
                     TE109 = header.SalesRep ?? "",
@@ -662,25 +683,17 @@ public class OrderChangeImportService
                     TE146 = 0,
                     TE147 = "", TE148 = "", TE149 = "",
                     TE150 = remarks,
-                    TE151 = "", TE152 = 0, TE153 = "", TE154 = "N",
-                    TE155 = header.CustomerName ?? "",
-                    TE156 = "", TE157 = "", TE158 = "", TE159 = "", TE160 = "",
-                    TE161 = header.TradeTerm ?? "",
-                    TE162 = "",
+                    TE151 = "", TE152 = 0,
                     TE163 = 0, TE164 = "", TE165 = 0, TE166 = "", TE167 = "",
                     TE168 = "N",
                     TE169 = header.TaxNo ?? "",
                     TE170 = "", TE171 = "", TE172 = "", TE173 = "", TE174 = "",
                     TE175 = "", TE176 = "", TE177 = "", TE178 = "",
-                    TE179 = header.DepositPartial ?? "N",
-                    TE180 = header.DetailMultiTax ?? "N",
-                    TE181 = "",
-                    TE182 = "",
                 };
 
                 await erpConn.ExecuteAsync(@"
-                    INSERT INTO COPTE (COMPANY, CREATOR, USR_GROUP, CREATE_DATE, CREATE_TIME, CREATE_AP, CREATE_PRID
-                        , MODIFIER, MODI_DATE, MODI_TIME, MODI_AP, MODI_PRID, FLAG
+                    INSERT INTO COPTE (COMPANY, CREATOR, USR_GROUP, CREATE_DATE
+                        , MODIFIER, MODI_DATE, FLAG
                         , TE001, TE002, TE003, TE004, TE005, TE006, TE007, TE008, TE009, TE010
                         , TE011, TE012, TE013, TE014, TE015, TE016, TE017, TE018, TE019, TE020
                         , TE021, TE022, TE023, TE024, TE025, TE026, TE027, TE028, TE029, TE030
@@ -688,19 +701,17 @@ public class OrderChangeImportService
                         , TE041, TE042, TE043, TE044, TE045, TE046, TE047, TE048, TE049, TE050
                         , TE051, TE052, TE053, TE054, TE055, TE056, TE057, TE058, TE059, TE060
                         , TE061, TE062, TE063, TE064, TE065, TE066, TE067, TE068, TE069, TE070
-                        , TE071, TE072, TE073, TE074, TE075, TE076, TE077, TE078, TE079, TE080
-                        , TE081, TE082
-                        , TE103, TE104, TE105, TE106, TE107, TE108, TE109, TE110
+                        , TE071, TE072, TE073, TE074, TE075, TE076, TE077, TE078
+                        , TE103, TE107, TE108, TE109, TE110
                         , TE111, TE112, TE113, TE114, TE115, TE116, TE117, TE118, TE119, TE120
                         , TE121, TE122, TE123, TE124, TE125, TE126, TE127, TE128, TE129, TE130
                         , TE131, TE132, TE133, TE134, TE135, TE136, TE137, TE138, TE139, TE140
                         , TE141, TE142, TE143, TE144, TE145, TE146, TE147, TE148, TE149, TE150
-                        , TE151, TE152, TE153, TE154, TE155, TE156, TE157, TE158, TE159, TE160
-                        , TE161, TE162, TE163, TE164, TE165, TE166, TE167, TE168, TE169, TE170
-                        , TE171, TE172, TE173, TE174, TE175, TE176, TE177, TE178, TE179, TE180
-                        , TE181, TE182)
-                    VALUES (@COMPANY, @CREATOR, @USR_GROUP, @CREATE_DATE, @CREATE_TIME, @CREATE_AP, @CREATE_PRID
-                        , @MODIFIER, @MODI_DATE, @MODI_TIME, @MODI_AP, @MODI_PRID, @FLAG
+                        , TE151, TE152
+                        , TE163, TE164, TE165, TE166, TE167, TE168, TE169, TE170
+                        , TE171, TE172, TE173, TE174, TE175, TE176, TE177, TE178)
+                    VALUES (@COMPANY, @CREATOR, @USR_GROUP, @CREATE_DATE
+                        , @MODIFIER, @MODI_DATE, @FLAG
                         , @TE001, @TE002, @TE003, @TE004, @TE005, @TE006, @TE007, @TE008, @TE009, @TE010
                         , @TE011, @TE012, @TE013, @TE014, @TE015, @TE016, @TE017, @TE018, @TE019, @TE020
                         , @TE021, @TE022, @TE023, @TE024, @TE025, @TE026, @TE027, @TE028, @TE029, @TE030
@@ -708,17 +719,15 @@ public class OrderChangeImportService
                         , @TE041, @TE042, @TE043, @TE044, @TE045, @TE046, @TE047, @TE048, @TE049, @TE050
                         , @TE051, @TE052, @TE053, @TE054, @TE055, @TE056, @TE057, @TE058, @TE059, @TE060
                         , @TE061, @TE062, @TE063, @TE064, @TE065, @TE066, @TE067, @TE068, @TE069, @TE070
-                        , @TE071, @TE072, @TE073, @TE074, @TE075, @TE076, @TE077, @TE078, @TE079, @TE080
-                        , @TE081, @TE082
-                        , @TE103, @TE104, @TE105, @TE106, @TE107, @TE108, @TE109, @TE110
+                        , @TE071, @TE072, @TE073, @TE074, @TE075, @TE076, @TE077, @TE078
+                        , @TE103, @TE107, @TE108, @TE109, @TE110
                         , @TE111, @TE112, @TE113, @TE114, @TE115, @TE116, @TE117, @TE118, @TE119, @TE120
                         , @TE121, @TE122, @TE123, @TE124, @TE125, @TE126, @TE127, @TE128, @TE129, @TE130
                         , @TE131, @TE132, @TE133, @TE134, @TE135, @TE136, @TE137, @TE138, @TE139, @TE140
                         , @TE141, @TE142, @TE143, @TE144, @TE145, @TE146, @TE147, @TE148, @TE149, @TE150
-                        , @TE151, @TE152, @TE153, @TE154, @TE155, @TE156, @TE157, @TE158, @TE159, @TE160
-                        , @TE161, @TE162, @TE163, @TE164, @TE165, @TE166, @TE167, @TE168, @TE169, @TE170
-                        , @TE171, @TE172, @TE173, @TE174, @TE175, @TE176, @TE177, @TE178, @TE179, @TE180
-                        , @TE181, @TE182)", coptEParams);
+                        , @TE151, @TE152
+                        , @TE163, @TE164, @TE165, @TE166, @TE167, @TE168, @TE169, @TE170
+                        , @TE171, @TE172, @TE173, @TE174, @TE175, @TE176, @TE177, @TE178)", coptEParams);
 
                 // ========== 寫入 COPTF (訂單變更單身) ==========
                 foreach (var d in details)
@@ -727,8 +736,8 @@ public class OrderChangeImportService
                     var coptFParams = new
                     {
                         COMPANY = companyNo, CREATOR = "IMPORT", USR_GROUP = "",
-                        CREATE_DATE = dateNow, CREATE_TIME = timeNow, CREATE_AP = "IMPORT", CREATE_PRID = "BM",
-                        MODIFIER = "", MODI_DATE = "", MODI_TIME = "", MODI_AP = "", MODI_PRID = "", FLAG = "1",
+                        CREATE_DATE = dateNow,
+                        MODIFIER = "", MODI_DATE = "", FLAG = "1",
 
                         TF001 = erpPrefix,
                         TF002 = erpNo,
@@ -749,22 +758,16 @@ public class OrderChangeImportService
                         TF018 = changeReason,
                         TF019 = "N",
                         TF020 = "", TF021 = "", TF022 = "", TF023 = "", TF024 = "",
-                        TF025 = "", TF026 = "", TF027 = "", TF028 = "", TF029 = "", TF030 = "",
-                        TF031 = "", TF032 = "", TF033 = "", TF034 = "", TF035 = "", TF036 = "",
+                        TF025 = "", TF026 = "", TF027 = "", TF028 = "", TF029 = "",
+                        TF034 = "", TF035 = "", TF036 = "",
                         TF037 = "", TF038 = "", TF039 = "", TF040 = "", TF041 = "", TF042 = "",
-                        TF043 = "", TF044 = "", TF045 = "", TF046 = "", TF047 = "", TF048 = "",
+                        TF043 = "", TF044 = "", TF045 = "", TF046 = "",
+                        TF048 = "",
                         TF049 = "", TF050 = "", TF051 = "", TF052 = "", TF053 = "", TF054 = "",
                         TF055 = "", TF056 = "", TF057 = "", TF058 = "", TF059 = "", TF060 = "",
-                        TF061 = "", TF062 = "", TF063 = "", TF064 = "", TF065 = "", TF066 = "",
-                        TF067 = "", TF068 = "", TF069 = "", TF070 = "", TF071 = "", TF072 = "",
-                        TF073 = "", TF074 = "", TF075 = "", TF076 = "", TF077 = "", TF078 = "",
-                        TF079 = "", TF080 = "", TF081 = "", TF082 = "", TF083 = "", TF084 = "",
-                        TF085 = "", TF086 = "", TF087 = "", TF088 = "", TF089 = "", TF090 = "",
-                        TF091 = "", TF092 = "", TF093 = "", TF094 = "", TF095 = "", TF096 = "",
-                        TF097 = "", TF098 = "", TF099 = "", TF100 = "",
-                        TF101 = "", TF102 = "", TF103 = "",
+                        TF061 = "",
 
-                        // ---- 原值 TF104-TF177 ----
+                        // ---- 原值 TF104-TF117, TF120-TF134, TF136-TF161（此ERP版本無 TF118-119/TF135/TF162-177）----
                         TF104 = seqNo,
                         TF105 = d.ProductCode ?? "",
                         TF106 = d.ProductName ?? "",
@@ -775,18 +778,14 @@ public class OrderChangeImportService
                         TF114 = (d.OriginalUnitPrice ?? 0) * (d.OriginalQuantity ?? 0),
                         TF115 = d.OriginalDeliveryDate?.ToString("yyyyMMdd") ?? "",
                         TF116 = "", TF117 = "N",
-                        TF118 = changeReason,
-                        TF119 = "N",
                         TF120 = "", TF121 = "", TF122 = "", TF123 = "", TF124 = "", TF125 = "",
                         TF126 = "", TF127 = "", TF128 = "", TF129 = "", TF130 = "", TF131 = "",
-                        TF132 = "", TF133 = "", TF134 = "", TF135 = "", TF136 = "", TF137 = "",
+                        TF132 = "", TF133 = "", TF134 = "",
+                        TF136 = "", TF137 = "",
                         TF138 = "", TF139 = "", TF140 = "", TF141 = "", TF142 = "", TF143 = "",
                         TF144 = "", TF145 = "", TF146 = "", TF147 = "", TF148 = "", TF149 = "",
                         TF150 = "", TF151 = "", TF152 = "", TF153 = "", TF154 = "", TF155 = "",
                         TF156 = "", TF157 = "", TF158 = "", TF159 = "", TF160 = "", TF161 = "",
-                        TF162 = "", TF163 = "", TF164 = "", TF165 = "", TF166 = "", TF167 = "",
-                        TF168 = "", TF169 = "", TF170 = "", TF171 = "", TF172 = "", TF173 = "",
-                        TF174 = "", TF175 = "", TF176 = "", TF177 = "",
 
                         // ---- TF500-TF509 ----
                         TF500 = "", TF501 = 0, TF502 = "", TF503 = "", TF504 = "N",
@@ -794,50 +793,44 @@ public class OrderChangeImportService
                     };
 
                     await erpConn.ExecuteAsync(@"
-                        INSERT INTO COPTF (COMPANY, CREATOR, USR_GROUP, CREATE_DATE, CREATE_TIME, CREATE_AP, CREATE_PRID
-                            , MODIFIER, MODI_DATE, MODI_TIME, MODI_AP, MODI_PRID, FLAG
+                        INSERT INTO COPTF (COMPANY, CREATOR, USR_GROUP, CREATE_DATE
+                            , MODIFIER, MODI_DATE, FLAG
                             , TF001, TF002, TF003, TF004, TF005, TF006, TF007, TF008, TF009, TF010
                             , TF011, TF012, TF013, TF014, TF015, TF016, TF017, TF018, TF019, TF020
-                            , TF021, TF022, TF023, TF024, TF025, TF026, TF027, TF028, TF029, TF030
-                            , TF031, TF032, TF033, TF034, TF035, TF036, TF037, TF038, TF039, TF040
-                            , TF041, TF042, TF043, TF044, TF045, TF046, TF047, TF048, TF049, TF050
+                            , TF021, TF022, TF023, TF024, TF025, TF026, TF027, TF028, TF029
+                            , TF034, TF035, TF036, TF037, TF038, TF039, TF040
+                            , TF041, TF042, TF043, TF044, TF045, TF046
+                            , TF048, TF049, TF050
                             , TF051, TF052, TF053, TF054, TF055, TF056, TF057, TF058, TF059, TF060
-                            , TF061, TF062, TF063, TF064, TF065, TF066, TF067, TF068, TF069, TF070
-                            , TF071, TF072, TF073, TF074, TF075, TF076, TF077, TF078, TF079, TF080
-                            , TF081, TF082, TF083, TF084, TF085, TF086, TF087, TF088, TF089, TF090
-                            , TF091, TF092, TF093, TF094, TF095, TF096, TF097, TF098, TF099, TF100
-                            , TF101, TF102, TF103
+                            , TF061
                             , TF104, TF105, TF106, TF107, TF108, TF109, TF110
-                            , TF111, TF112, TF113, TF114, TF115, TF116, TF117, TF118, TF119, TF120
-                            , TF121, TF122, TF123, TF124, TF125, TF126, TF127, TF128, TF129, TF130
-                            , TF131, TF132, TF133, TF134, TF135, TF136, TF137, TF138, TF139, TF140
+                            , TF111, TF112, TF113, TF114, TF115, TF116, TF117
+                            , TF120, TF121, TF122, TF123, TF124, TF125, TF126, TF127, TF128, TF129, TF130
+                            , TF131, TF132, TF133, TF134
+                            , TF136, TF137, TF138, TF139, TF140
                             , TF141, TF142, TF143, TF144, TF145, TF146, TF147, TF148, TF149, TF150
                             , TF151, TF152, TF153, TF154, TF155, TF156, TF157, TF158, TF159, TF160
-                            , TF161, TF162, TF163, TF164, TF165, TF166, TF167, TF168, TF169, TF170
-                            , TF171, TF172, TF173, TF174, TF175, TF176, TF177
+                            , TF161
                             , TF500, TF501, TF502, TF503, TF504
                             , TF505, TF506, TF507, TF508, TF509)
-                        VALUES (@COMPANY, @CREATOR, @USR_GROUP, @CREATE_DATE, @CREATE_TIME, @CREATE_AP, @CREATE_PRID
-                            , @MODIFIER, @MODI_DATE, @MODI_TIME, @MODI_AP, @MODI_PRID, @FLAG
+                        VALUES (@COMPANY, @CREATOR, @USR_GROUP, @CREATE_DATE
+                            , @MODIFIER, @MODI_DATE, @FLAG
                             , @TF001, @TF002, @TF003, @TF004, @TF005, @TF006, @TF007, @TF008, @TF009, @TF010
                             , @TF011, @TF012, @TF013, @TF014, @TF015, @TF016, @TF017, @TF018, @TF019, @TF020
-                            , @TF021, @TF022, @TF023, @TF024, @TF025, @TF026, @TF027, @TF028, @TF029, @TF030
-                            , @TF031, @TF032, @TF033, @TF034, @TF035, @TF036, @TF037, @TF038, @TF039, @TF040
-                            , @TF041, @TF042, @TF043, @TF044, @TF045, @TF046, @TF047, @TF048, @TF049, @TF050
+                            , @TF021, @TF022, @TF023, @TF024, @TF025, @TF026, @TF027, @TF028, @TF029
+                            , @TF034, @TF035, @TF036, @TF037, @TF038, @TF039, @TF040
+                            , @TF041, @TF042, @TF043, @TF044, @TF045, @TF046
+                            , @TF048, @TF049, @TF050
                             , @TF051, @TF052, @TF053, @TF054, @TF055, @TF056, @TF057, @TF058, @TF059, @TF060
-                            , @TF061, @TF062, @TF063, @TF064, @TF065, @TF066, @TF067, @TF068, @TF069, @TF070
-                            , @TF071, @TF072, @TF073, @TF074, @TF075, @TF076, @TF077, @TF078, @TF079, @TF080
-                            , @TF081, @TF082, @TF083, @TF084, @TF085, @TF086, @TF087, @TF088, @TF089, @TF090
-                            , @TF091, @TF092, @TF093, @TF094, @TF095, @TF096, @TF097, @TF098, @TF099, @TF100
-                            , @TF101, @TF102, @TF103
+                            , @TF061
                             , @TF104, @TF105, @TF106, @TF107, @TF108, @TF109, @TF110
-                            , @TF111, @TF112, @TF113, @TF114, @TF115, @TF116, @TF117, @TF118, @TF119, @TF120
-                            , @TF121, @TF122, @TF123, @TF124, @TF125, @TF126, @TF127, @TF128, @TF129, @TF130
-                            , @TF131, @TF132, @TF133, @TF134, @TF135, @TF136, @TF137, @TF138, @TF139, @TF140
+                            , @TF111, @TF112, @TF113, @TF114, @TF115, @TF116, @TF117
+                            , @TF120, @TF121, @TF122, @TF123, @TF124, @TF125, @TF126, @TF127, @TF128, @TF129, @TF130
+                            , @TF131, @TF132, @TF133, @TF134
+                            , @TF136, @TF137, @TF138, @TF139, @TF140
                             , @TF141, @TF142, @TF143, @TF144, @TF145, @TF146, @TF147, @TF148, @TF149, @TF150
                             , @TF151, @TF152, @TF153, @TF154, @TF155, @TF156, @TF157, @TF158, @TF159, @TF160
-                            , @TF161, @TF162, @TF163, @TF164, @TF165, @TF166, @TF167, @TF168, @TF169, @TF170
-                            , @TF171, @TF172, @TF173, @TF174, @TF175, @TF176, @TF177
+                            , @TF161
                             , @TF500, @TF501, @TF502, @TF503, @TF504
                             , @TF505, @TF506, @TF507, @TF508, @TF509)", coptFParams);
                 }

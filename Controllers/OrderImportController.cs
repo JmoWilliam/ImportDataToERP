@@ -67,8 +67,15 @@ public class OrderImportController : Controller
         }
 
         header.Id = id;
-        await _service.UpdateHeaderAsync(header);
-        TempData["Success"] = "單頭已更新";
+        try
+        {
+            await _service.UpdateHeaderAsync(header);
+            TempData["Success"] = "單頭已更新";
+        }
+        catch (InvalidOperationException ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
         return RedirectToAction(nameof(Edit), new { id });
     }
 
@@ -104,9 +111,16 @@ public class OrderImportController : Controller
         if (detail.HeaderId <= 0)
             return BadRequest("HeaderId 不可為空");
 
-        var id = await _service.CreateDetailAsync(detail);
-        detail.Id = id;
-        return Json(new { success = true, detail });
+        try
+        {
+            var id = await _service.CreateDetailAsync(detail);
+            detail.Id = id;
+            return Json(new { success = true, detail });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Json(new { success = false, message = ex.Message });
+        }
     }
 
     [HttpPost]
@@ -115,15 +129,29 @@ public class OrderImportController : Controller
         if (detail.Id <= 0)
             return BadRequest("Id 不可為空");
 
-        await _service.UpdateDetailAsync(detail);
-        return Json(new { success = true });
+        try
+        {
+            await _service.UpdateDetailAsync(detail);
+            return Json(new { success = true });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Json(new { success = false, message = ex.Message });
+        }
     }
 
     [HttpPost]
     public async Task<IActionResult> DeleteDetail([FromBody] DeleteDetailRequest req)
     {
-        await _service.DeleteDetailAsync(req.Id);
-        return Json(new { success = true });
+        try
+        {
+            await _service.DeleteDetailAsync(req.Id);
+            return Json(new { success = true });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Json(new { success = false, message = ex.Message });
+        }
     }
 
     public class DeleteDetailRequest { public int Id { get; set; } }
@@ -133,8 +161,15 @@ public class OrderImportController : Controller
     [HttpPost]
     public async Task<IActionResult> Delete(int id)
     {
-        await _service.DeleteHeaderAsync(id);
-        TempData["Success"] = "已刪除";
+        try
+        {
+            await _service.DeleteHeaderAsync(id);
+            TempData["Success"] = "已刪除";
+        }
+        catch (InvalidOperationException ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
         return RedirectToAction(nameof(Index));
     }
 

@@ -89,6 +89,11 @@ public class OrderImportService
     public async Task<bool> UpdateHeaderAsync(OrderImportHeader header)
     {
         using var conn = _db.CreateConnection();
+        var transferStatus = await conn.ExecuteScalarAsync<int?>(
+            "SELECT TransferStatus FROM OrderImportHeaders WHERE Id = @Id", new { header.Id });
+        if (transferStatus == 2)
+            throw new InvalidOperationException("此訂單已拋轉ERP，單頭無法再編輯，避免與ERP資料不一致");
+
         var sql = @"
             UPDATE OrderImportHeaders SET
                 OrderType    = @OrderType,
@@ -112,6 +117,11 @@ public class OrderImportService
         using var transaction = conn.BeginTransaction();
         try
         {
+            var transferStatus = await conn.ExecuteScalarAsync<int?>(
+                "SELECT TransferStatus FROM OrderImportHeaders WHERE Id = @Id", new { Id = id }, transaction);
+            if (transferStatus == 2)
+                throw new InvalidOperationException("此訂單已拋轉ERP，無法刪除，避免與ERP資料不一致");
+
             await conn.ExecuteAsync("DELETE FROM OrderImportDetails WHERE HeaderId = @Id", new { Id = id }, transaction);
             var rows = await conn.ExecuteAsync("DELETE FROM OrderImportHeaders WHERE Id = @Id", new { Id = id }, transaction);
             await transaction.CommitAsync();
@@ -129,6 +139,11 @@ public class OrderImportService
     public async Task<int> CreateDetailAsync(OrderImportDetail detail)
     {
         using var conn = _db.CreateConnection();
+        var transferStatus = await conn.ExecuteScalarAsync<int?>(
+            "SELECT TransferStatus FROM OrderImportHeaders WHERE Id = @HeaderId", new { detail.HeaderId });
+        if (transferStatus == 2)
+            throw new InvalidOperationException("此訂單已拋轉ERP，無法新增明細，避免與ERP資料不一致");
+
         detail.CreatedAt = DateTime.Now;
         var sql = @"
             INSERT INTO OrderImportDetails
@@ -144,6 +159,13 @@ public class OrderImportService
     public async Task<bool> UpdateDetailAsync(OrderImportDetail detail)
     {
         using var conn = _db.CreateConnection();
+        var transferStatus = await conn.ExecuteScalarAsync<int?>(
+            @"SELECT h.TransferStatus FROM OrderImportDetails d
+              JOIN OrderImportHeaders h ON h.Id = d.HeaderId
+              WHERE d.Id = @Id", new { detail.Id });
+        if (transferStatus == 2)
+            throw new InvalidOperationException("此訂單已拋轉ERP，明細無法再編輯，避免與ERP資料不一致");
+
         var sql = @"
             UPDATE OrderImportDetails SET
                 OrderType   = @OrderType,
@@ -163,6 +185,13 @@ public class OrderImportService
     public async Task<bool> DeleteDetailAsync(int id)
     {
         using var conn = _db.CreateConnection();
+        var transferStatus = await conn.ExecuteScalarAsync<int?>(
+            @"SELECT h.TransferStatus FROM OrderImportDetails d
+              JOIN OrderImportHeaders h ON h.Id = d.HeaderId
+              WHERE d.Id = @Id", new { Id = id });
+        if (transferStatus == 2)
+            throw new InvalidOperationException("此訂單已拋轉ERP，明細無法刪除，避免與ERP資料不一致");
+
         return await conn.ExecuteAsync("DELETE FROM OrderImportDetails WHERE Id = @Id", new { Id = id }) > 0;
     }
 
@@ -409,7 +438,6 @@ public class OrderImportService
             return "部分明細無品號，無法拋轉";
 
         var dateNow = DateTime.Now.ToString("yyyyMMdd");
-        var timeNow = DateTime.Now.ToString("HH:mm:ss");
         var erpPrefix = header.OrderType;
         var erpNo = "";
         var factory = "";
@@ -425,12 +453,33 @@ public class OrderImportService
 
                 // 檢查 ERP 廠別
                 var factoryResult = await erpConn.QueryFirstOrDefaultAsync<dynamic>(
-                    "SELECT TOP 1 RTRIM(LTRIM(MB001)) MB001 FROM CMSMB WHERE COMPANY = (SELECT TOP 1 COMPANY FROM CMSMB)");
+                    "SELECT TOP 1 RTRIM(LTRIM(COMPANY)) COMPANY, RTRIM(LTRIM(MB001)) MB001 FROM CMSMB");
                 if (factoryResult != null)
                 {
+                    companyNo = factoryResult.COMPANY ?? "";
                     factory = factoryResult.MB001 ?? "";
-                    companyNo = factory;
                 }
+
+                // 查詢客戶主檔 COPMA 補齊地址/連絡方式/交易條件等欄位
+                var custInfo = await erpConn.QueryFirstOrDefaultAsync<CustomerLookup>(
+                    @"SELECT RTRIM(MA003) AS FullName, RTRIM(MA005) AS Contact,
+                             RTRIM(MA006) AS Tel, RTRIM(MA008) AS Fax,
+                             RTRIM(MA025) AS InvoiceAddress,
+                             RTRIM(MA027) AS ShipAddress1, RTRIM(MA040) AS PostalCode, RTRIM(MA064) AS ShipAddress2,
+                             RTRIM(MA030) AS PriceTerm, RTRIM(MA031) AS PaymentTerm, RTRIM(MA083) AS PaymentTermCode,
+                             RTRIM(MA048) AS ShipMethod, RTRIM(MA109) AS TradeTerm, RTRIM(MA118) AS TaxCode
+                      FROM COPMA WHERE RTRIM(MA001) = @CustomerCode",
+                    new { header.CustomerCode });
+                var shipAddress1 = custInfo == null
+                    ? ""
+                    : string.Join(" ", new[] { custInfo.PostalCode, custInfo.ShipAddress1 }.Where(s => !string.IsNullOrEmpty(s)));
+
+                // 查詢品號主檔 INVMB 取得規格
+                var productCodes = details.Select(d => d.ProductCode!.Trim()).Distinct().ToList();
+                var specRows = await erpConn.QueryAsync<ProductSpecLookup>(
+                    "SELECT RTRIM(MB001) AS ProductCode, RTRIM(MB003) AS Spec FROM INVMB WHERE RTRIM(MB001) IN @Codes",
+                    new { Codes = productCodes });
+                var specMap = specRows.ToDictionary(r => r.ProductCode, r => r.Spec, StringComparer.OrdinalIgnoreCase);
 
                 // 檢查單據設定 CMSMQ
                 var docSetting = await erpConn.QueryFirstOrDefaultAsync<dynamic>(
@@ -486,37 +535,37 @@ public class OrderImportService
                 var coptcParams = new
                 {
                     COMPANY = companyNo, CREATOR = "IMPORT", USR_GROUP = "",
-                    CREATE_DATE = dateNow, CREATE_TIME = timeNow, CREATE_AP = "IMPORT", CREATE_PRID = "BM",
-                    MODIFIER = "", MODI_DATE = "", MODI_TIME = "", MODI_AP = "", MODI_PRID = "", FLAG = "1",
+                    CREATE_DATE = dateNow,
+                    MODIFIER = "", MODI_DATE = "", FLAG = "1",
                     TC001 = erpPrefix, TC002 = erpNo,
                     TC003 = (header.OrderDate ?? refDate).ToString("yyyyMMdd"),
                     TC004 = header.CustomerCode ?? "", TC005 = header.DeptCode ?? "",
                     TC006 = header.SalesRep ?? "", TC007 = header.FactoryCode ?? factory,
-                    TC008 = currency, TC009 = 1m, TC010 = "", TC011 = "",
-                    TC012 = header.OrderNo ?? "", TC013 = "", TC014 = "",
+                    TC008 = currency, TC009 = 1m, TC010 = shipAddress1, TC011 = custInfo?.ShipAddress2 ?? "",
+                    TC012 = header.OrderNo ?? "", TC013 = custInfo?.PriceTerm ?? "", TC014 = custInfo?.PaymentTerm ?? "",
                     TC015 = header.Remarks ?? "", TC016 = header.TaxType ?? "",
-                    TC017 = "", TC018 = "", TC019 = "", TC020 = "", TC021 = "",
+                    TC017 = "", TC018 = custInfo?.Contact ?? "", TC019 = custInfo?.ShipMethod ?? "", TC020 = "", TC021 = "",
                     TC022 = "", TC023 = "", TC024 = "", TC025 = "", TC026 = 0m,
                     TC027 = "N", TC028 = 0, TC029 = totalAmt, TC030 = 0m, TC031 = totalQty,
                     TC032 = header.CustomerCode ?? "",
                     TC033 = "", TC034 = "", TC035 = "", TC036 = "", TC037 = "", TC038 = "",
                     TC039 = (header.DocDate ?? refDate).ToString("yyyyMMdd"),
-                    TC040 = "", TC041 = 0m, TC042 = "", TC043 = 0m, TC044 = 0m, TC045 = 0m, TC046 = 0m,
+                    TC040 = "", TC041 = 0m, TC042 = custInfo?.PaymentTermCode ?? "", TC043 = 0m, TC044 = 0m, TC045 = 0m, TC046 = 0m,
                     TC047 = "", TC048 = "N", TC049 = "", TC050 = "N",
-                    TC051 = "", TC052 = 0, TC053 = "", TC054 = "", TC055 = "", TC056 = "1",
+                    TC051 = "", TC052 = 0, TC053 = custInfo?.FullName ?? "", TC054 = "", TC055 = "", TC056 = "1",
                     TC057 = "N", TC058 = "", TC059 = "", TC060 = "N", TC061 = "", TC062 = "",
-                    TC063 = "", TC064 = "", TC065 = "", TC066 = "", TC067 = "", TC068 = "",
+                    TC063 = custInfo?.InvoiceAddress ?? "", TC064 = "", TC065 = custInfo?.FullName ?? "", TC066 = custInfo?.Tel ?? "", TC067 = custInfo?.Fax ?? "", TC068 = custInfo?.TradeTerm ?? "",
                     TC069 = "", TC070 = "N", TC071 = "", TC072 = 0m, TC073 = 0m, TC074 = "",
-                    TC075 = "", TC076 = "", TC077 = "N", TC078 = "", TC079 = "", TC080 = "",
+                    TC075 = "", TC076 = "", TC077 = "N", TC078 = custInfo?.TaxCode ?? "", TC079 = "", TC080 = "",
                     TC081 = "", TC082 = "", TC083 = "", TC084 = "", TC085 = "", TC086 = "", TC087 = "",
-                    TC088 = "", TC089 = "", TC090 = "", TC091 = "N", TC092 = "", TC093 = "",
+                    TC088 = "", TC089 = "", TC090 = "",
                     UDF01 = "", UDF02 = "", UDF03 = "", UDF04 = "", UDF05 = "",
                     UDF06 = 0m, UDF07 = 0m, UDF08 = 0m, UDF09 = 0m, UDF10 = 0m,
                 };
 
                 await erpConn.ExecuteAsync(@"
-                    INSERT INTO COPTC (COMPANY, CREATOR, USR_GROUP, CREATE_DATE, CREATE_TIME, CREATE_AP, CREATE_PRID
-                        , MODIFIER, MODI_DATE, MODI_TIME, MODI_AP, MODI_PRID, FLAG
+                    INSERT INTO COPTC (COMPANY, CREATOR, USR_GROUP, CREATE_DATE
+                        , MODIFIER, MODI_DATE, FLAG
                         , TC001, TC002, TC003, TC004, TC005, TC006, TC007, TC008, TC009, TC010
                         , TC011, TC012, TC013, TC014, TC015, TC016, TC017, TC018, TC019, TC020
                         , TC021, TC022, TC023, TC024, TC025, TC026, TC027, TC028, TC029, TC030
@@ -526,10 +575,9 @@ public class OrderImportService
                         , TC061, TC062, TC063, TC064, TC065, TC066, TC067, TC068, TC069, TC070
                         , TC071, TC072, TC073, TC074, TC075, TC076, TC077, TC078, TC079, TC080
                         , TC081, TC082, TC083, TC084, TC085, TC086, TC087, TC088, TC089, TC090
-                        , TC091, TC092, TC093
                         , UDF01, UDF02, UDF03, UDF04, UDF05, UDF06, UDF07, UDF08, UDF09, UDF10)
-                    VALUES (@COMPANY, @CREATOR, @USR_GROUP, @CREATE_DATE, @CREATE_TIME, @CREATE_AP, @CREATE_PRID
-                        , @MODIFIER, @MODI_DATE, @MODI_TIME, @MODI_AP, @MODI_PRID, @FLAG
+                    VALUES (@COMPANY, @CREATOR, @USR_GROUP, @CREATE_DATE
+                        , @MODIFIER, @MODI_DATE, @FLAG
                         , @TC001, @TC002, @TC003, @TC004, @TC005, @TC006, @TC007, @TC008, @TC009, @TC010
                         , @TC011, @TC012, @TC013, @TC014, @TC015, @TC016, @TC017, @TC018, @TC019, @TC020
                         , @TC021, @TC022, @TC023, @TC024, @TC025, @TC026, @TC027, @TC028, @TC029, @TC030
@@ -539,7 +587,6 @@ public class OrderImportService
                         , @TC061, @TC062, @TC063, @TC064, @TC065, @TC066, @TC067, @TC068, @TC069, @TC070
                         , @TC071, @TC072, @TC073, @TC074, @TC075, @TC076, @TC077, @TC078, @TC079, @TC080
                         , @TC081, @TC082, @TC083, @TC084, @TC085, @TC086, @TC087, @TC088, @TC089, @TC090
-                        , @TC091, @TC092, @TC093
                         , @UDF01, @UDF02, @UDF03, @UDF04, @UDF05, @UDF06, @UDF07, @UDF08, @UDF09, @UDF10)", coptcParams);
 
                 // 寫入 COPTD
@@ -548,11 +595,12 @@ public class OrderImportService
                     var coptdParams = new
                     {
                         COMPANY = companyNo, CREATOR = "IMPORT", USR_GROUP = "",
-                        CREATE_DATE = dateNow, CREATE_TIME = timeNow, CREATE_AP = "IMPORT", CREATE_PRID = "BM",
-                        MODIFIER = "", MODI_DATE = "", MODI_TIME = "", MODI_AP = "", MODI_PRID = "", FLAG = "1",
+                        CREATE_DATE = dateNow,
+                        MODIFIER = "", MODI_DATE = "", FLAG = "1",
                         TD001 = erpPrefix, TD002 = erpNo,
                         TD003 = d.SeqNo ?? (details.IndexOf(d) + 1).ToString("D4"),
-                        TD004 = d.ProductCode ?? "", TD005 = d.ProductName ?? "", TD006 = "",
+                        TD004 = d.ProductCode ?? "", TD005 = d.ProductName ?? "",
+                        TD006 = specMap.TryGetValue((d.ProductCode ?? "").Trim(), out var spec) ? spec : "",
                         TD007 = d.Warehouse ?? "", TD008 = d.OrderQty, TD009 = 0m,
                         TD010 = d.Unit ?? "", TD011 = d.UnitPrice, TD012 = d.Amount,
                         TD013 = "", TD014 = "", TD015 = "", TD016 = "N", TD017 = "", TD018 = "", TD019 = "",
@@ -565,37 +613,33 @@ public class OrderImportService
                         TD054 = 0m, TD055 = 0m, TD056 = "", TD057 = "", TD058 = "",
                         TD059 = 0m, TD060 = "", TD061 = 0m, TD062 = "",
                         TD063 = "", TD064 = "", TD065 = "", TD066 = "", TD067 = "",
-                        TD068 = "", TD069 = "", TD070 = 0m,
-                        TD071 = "", TD072 = "", TD073 = "", TD074 = "", TD075 = "",
-                        TD076 = d.OrderQty, TD077 = d.Unit ?? "", TD078 = 0m, TD079 = "", TD080 = 0m,
+                        TD068 = "", TD069 = "",
                         TD500 = "", TD501 = 0m, TD502 = "", TD503 = "", TD504 = "N",
                         UDF01 = "", UDF02 = "", UDF03 = "", UDF04 = "", UDF05 = "",
                         UDF06 = 0m, UDF07 = 0m, UDF08 = 0m, UDF09 = 0m, UDF10 = 0m,
                     };
 
                     await erpConn.ExecuteAsync(@"
-                        INSERT INTO COPTD (COMPANY, CREATOR, USR_GROUP, CREATE_DATE, CREATE_TIME, CREATE_AP, CREATE_PRID
-                            , MODIFIER, MODI_DATE, MODI_TIME, MODI_AP, MODI_PRID, FLAG
+                        INSERT INTO COPTD (COMPANY, CREATOR, USR_GROUP, CREATE_DATE
+                            , MODIFIER, MODI_DATE, FLAG
                             , TD001, TD002, TD003, TD004, TD005, TD006, TD007, TD008, TD009, TD010
                             , TD011, TD012, TD013, TD014, TD015, TD016, TD017, TD018, TD019, TD020
                             , TD021, TD022, TD023, TD024, TD025, TD026, TD027, TD028, TD029, TD030
                             , TD031, TD032, TD033, TD034, TD035, TD036, TD037, TD038, TD039, TD040
                             , TD041, TD042, TD043, TD044, TD045, TD046, TD047, TD048, TD049, TD050
                             , TD051, TD052, TD053, TD054, TD055, TD056, TD057, TD058, TD059, TD060
-                            , TD061, TD062, TD063, TD064, TD065, TD066, TD067, TD068, TD069, TD070
-                            , TD071, TD072, TD073, TD074, TD075, TD076, TD077, TD078, TD079, TD080
+                            , TD061, TD062, TD063, TD064, TD065, TD066, TD067, TD068, TD069
                             , TD500, TD501, TD502, TD503, TD504
                             , UDF01, UDF02, UDF03, UDF04, UDF05, UDF06, UDF07, UDF08, UDF09, UDF10)
-                        VALUES (@COMPANY, @CREATOR, @USR_GROUP, @CREATE_DATE, @CREATE_TIME, @CREATE_AP, @CREATE_PRID
-                            , @MODIFIER, @MODI_DATE, @MODI_TIME, @MODI_AP, @MODI_PRID, @FLAG
+                        VALUES (@COMPANY, @CREATOR, @USR_GROUP, @CREATE_DATE
+                            , @MODIFIER, @MODI_DATE, @FLAG
                             , @TD001, @TD002, @TD003, @TD004, @TD005, @TD006, @TD007, @TD008, @TD009, @TD010
                             , @TD011, @TD012, @TD013, @TD014, @TD015, @TD016, @TD017, @TD018, @TD019, @TD020
                             , @TD021, @TD022, @TD023, @TD024, @TD025, @TD026, @TD027, @TD028, @TD029, @TD030
                             , @TD031, @TD032, @TD033, @TD034, @TD035, @TD036, @TD037, @TD038, @TD039, @TD040
                             , @TD041, @TD042, @TD043, @TD044, @TD045, @TD046, @TD047, @TD048, @TD049, @TD050
                             , @TD051, @TD052, @TD053, @TD054, @TD055, @TD056, @TD057, @TD058, @TD059, @TD060
-                            , @TD061, @TD062, @TD063, @TD064, @TD065, @TD066, @TD067, @TD068, @TD069, @TD070
-                            , @TD071, @TD072, @TD073, @TD074, @TD075, @TD076, @TD077, @TD078, @TD079, @TD080
+                            , @TD061, @TD062, @TD063, @TD064, @TD065, @TD066, @TD067, @TD068, @TD069
                             , @TD500, @TD501, @TD502, @TD503, @TD504
                             , @UDF01, @UDF02, @UDF03, @UDF04, @UDF05, @UDF06, @UDF07, @UDF08, @UDF09, @UDF10)", coptdParams);
                 }
@@ -669,6 +713,14 @@ public class OrderImportService
     }
 
     private sealed record ProductLookup(string ProductCode, string ProductName);
+
+    private sealed record ProductSpecLookup(string ProductCode, string Spec);
+
+    private sealed record CustomerLookup(
+        string FullName, string Contact, string Tel, string Fax, string InvoiceAddress,
+        string ShipAddress1, string PostalCode, string ShipAddress2,
+        string PriceTerm, string PaymentTerm, string PaymentTermCode,
+        string ShipMethod, string TradeTerm, string TaxCode);
 
     private async Task<string> GenerateBatchNoAsync(SqlConnection conn, SqlTransaction transaction, string today)
     {

@@ -142,9 +142,12 @@
                                             <button type="submit" class="btn px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-50 text-purple-700 hover:bg-purple-100">拋轉</button>
                                         </form>
                                     }
-                                    <form asp-action="Delete" asp-route-id="@item.Id" method="post" class="inline" onsubmit="return confirm('確認刪除此匯入記錄？')">
-                                        <button type="submit" class="btn px-2.5 py-1 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100">刪除</button>
-                                    </form>
+                                    @if (item.TransferStatus != 2)
+                                    {
+                                        <form asp-action="Delete" asp-route-id="@item.Id" method="post" class="inline" onsubmit="return confirm('確認刪除此匯入記錄？')">
+                                            <button type="submit" class="btn px-2.5 py-1 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100">刪除</button>
+                                        </form>
+                                    }
                                 </div>
                             </td>
                         </tr>
