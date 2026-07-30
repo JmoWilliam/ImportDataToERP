@@ -4,6 +4,9 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// 以 Windows 服務執行時自動套用正確設定 (工作目錄/生命週期)；一般執行(dotnet run/主控台)時不影響
+builder.Host.UseWindowsService();
+
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 builder.Services.AddHttpContextAccessor();
