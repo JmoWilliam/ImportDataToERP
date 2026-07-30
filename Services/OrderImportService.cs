@@ -11,12 +11,12 @@ namespace ImportDataToERP.Services;
 public class OrderImportService
 {
     private readonly DbConnectionFactory _db;
-    private readonly string _erpConnectionString;
+    private readonly ErpConnectionAccessor _erpConnectionAccessor;
 
-    public OrderImportService(DbConnectionFactory db, string erpConnectionString)
+    public OrderImportService(DbConnectionFactory db, ErpConnectionAccessor erpConnectionAccessor)
     {
         _db = db;
-        _erpConnectionString = erpConnectionString;
+        _erpConnectionAccessor = erpConnectionAccessor;
     }
 
     // ========== 查詢 ==========
@@ -448,7 +448,7 @@ public class OrderImportService
             // === Phase 1: ERP 端操作 (TransactionScope 包裹) ===
             {
                 using var ts = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
-                using var erpConn = new SqlConnection(_erpConnectionString);
+                using var erpConn = new SqlConnection(_erpConnectionAccessor.GetConnectionString());
                 await erpConn.OpenAsync();
 
                 // 檢查 ERP 廠別
@@ -690,7 +690,7 @@ public class OrderImportService
 
         try
         {
-            using var erpConn = new SqlConnection(_erpConnectionString);
+            using var erpConn = new SqlConnection(_erpConnectionAccessor.GetConnectionString());
             var rows = await erpConn.QueryAsync<ProductLookup>(
                 "SELECT RTRIM(MB001) AS ProductCode, RTRIM(MB002) AS ProductName FROM INVMB WHERE RTRIM(MB001) IN @Codes",
                 new { Codes = codes });

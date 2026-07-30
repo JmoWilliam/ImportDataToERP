@@ -1,6 +1,6 @@
 @model IEnumerable<ImportDataToERP.Models.OrderChangeHeader>
 @{
-    ViewData["Title"] = "匯入訂單變更To ERP";
+    ViewData["Title"] = "匯入訂單交期變更To ERP";
 }
 
 <div class="card p-6">
@@ -8,13 +8,13 @@
     <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
         <div>
             <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                🔄 匯入訂單變更To ERP
+                🔄 匯入訂單交期變更To ERP
                 @if (Model.Any())
                 {
                     <span class="badge badge-info text-xs">@Model.Count() 筆</span>
                 }
             </h2>
-            <p class="text-sm text-gray-400 mt-0.5">管理已匯入的訂單變更資料，可編輯明細後拋轉至ERP系統</p>
+            <p class="text-sm text-gray-400 mt-0.5">依原訂單單別/單號/序號，將新交期匯入並拋轉至ERP系統</p>
         </div>
         <div class="flex gap-2">
             <a asp-action="DownloadTemplate" class="btn inline-flex items-center gap-1.5 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium">
@@ -83,9 +83,8 @@
                     <tr class="bg-gray-50/80">
                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b-2 border-gray-100">匯入單號</th>
                         <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b-2 border-gray-100">ERP單號</th>
-                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b-2 border-gray-100">原訂單號</th>
-                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b-2 border-gray-100">客戶名稱</th>
-                        <th class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider border-b-2 border-gray-100">單據日期</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b-2 border-gray-100">原訂單單別</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b-2 border-gray-100">原訂單單號</th>
                         <th class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider border-b-2 border-gray-100">明細</th>
                         <th class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider border-b-2 border-gray-100">匯入狀態</th>
                         <th class="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider border-b-2 border-gray-100">ERP拋轉</th>
@@ -109,15 +108,8 @@
                                     <span class="text-gray-300 text-sm">—</span>
                                 }
                             </td>
-                            <td class="px-4 py-3">
-                                <span class="font-mono text-sm font-medium text-gray-700">
-                                    @(string.IsNullOrEmpty(item.OriginalOrderNo)
-                                        ? "—"
-                                        : item.OriginalOrderNo)
-                                </span>
-                            </td>
-                            <td class="px-4 py-3 text-sm font-medium text-gray-800">@(item.CustomerName ?? item.CustomerCode)</td>
-                            <td class="px-4 py-3 text-sm text-gray-600 text-center whitespace-nowrap">@item.DocDate?.ToString("yyyy-MM-dd")</td>
+                            <td class="px-4 py-3 text-sm font-medium text-gray-700">@item.SoErpPrefix</td>
+                            <td class="px-4 py-3 text-sm font-medium text-gray-800 font-mono">@item.SoErpNo</td>
                             <td class="px-4 py-3 text-sm text-center">
                                 <span class="text-blue-600 font-semibold">@item.DetailCount 筆</span>
                             </td>
@@ -143,9 +135,6 @@
                                         <form asp-action="TransferToErp" asp-route-id="@item.Id" method="post" class="inline" onsubmit="return confirm('確認拋轉此變更單到ERP？')">
                                             <button type="submit" class="btn px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-50 text-purple-700 hover:bg-purple-100">拋轉</button>
                                         </form>
-                                    }
-                                    @if (item.TransferStatus != 2)
-                                    {
                                         <form asp-action="Delete" asp-route-id="@item.Id" method="post" class="inline" onsubmit="return confirm('確認刪除此變更紀錄？')">
                                             <button type="submit" class="btn px-2.5 py-1 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100">刪除</button>
                                         </form>

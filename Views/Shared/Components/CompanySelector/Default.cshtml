@@ -1,0 +1,23 @@
+@model List<ImportDataToERP.Services.ErpCompany>
+@{
+    var selectedDatabase = ViewBag.SelectedDatabase as string;
+}
+
+@if (Model.Count > 0)
+{
+    <form method="post" asp-controller="Account" asp-action="SelectCompany" class="inline-flex items-center">
+        <input type="hidden" name="returnUrl" id="companySelectorReturnUrl" value="" />
+        <input type="hidden" name="companyName" id="companySelectorName" value="" />
+        <select name="database"
+                onchange="document.getElementById('companySelectorReturnUrl').value = window.location.pathname + window.location.search; document.getElementById('companySelectorName').value = this.options[this.selectedIndex].text; this.form.submit();"
+                class="bg-white/10 text-white text-sm rounded-lg px-2.5 py-1.5 border border-white/20 hover:bg-white/20 transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/40">
+            <option value="" class="text-gray-800">🏢 請選擇公司別</option>
+            @foreach (var c in Model)
+            {
+                <option value="@c.Database" class="text-gray-800" selected="@(string.Equals(c.Database, selectedDatabase, StringComparison.OrdinalIgnoreCase))">
+                    @c.Name
+                </option>
+            }
+        </select>
+    </form>
+}

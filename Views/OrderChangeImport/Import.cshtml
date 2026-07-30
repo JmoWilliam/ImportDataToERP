@@ -1,12 +1,12 @@
 @model ImportDataToERP.Models.OrderChangeViewModel
 @{
-    ViewData["Title"] = "訂單變更匯入預覽";
+    ViewData["Title"] = "訂單交期變更匯入預覽";
 }
 
 <div class="card p-6">
     <div class="flex flex-wrap justify-between items-center gap-3 mb-6">
         <div>
-            <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">🔄 訂單變更匯入預覽</h2>
+            <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">🔄 訂單交期變更匯入預覽</h2>
             <p class="text-sm text-gray-400 mt-1 flex flex-wrap items-center gap-3">
                 <span>📄 @Model.FileName</span>
                 <span class="text-gray-200">|</span>
@@ -33,43 +33,24 @@
             <div class="border border-gray-200 rounded-xl overflow-hidden hover:shadow-sm transition">
                 <!-- 單頭摘要 -->
                 <div class="bg-gradient-to-r from-blue-50 to-white px-5 py-3.5 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm">
-                    <span class="font-semibold text-blue-800 text-base">🏢 @(h.CustomerName ?? h.CustomerCode)</span>
-                    <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">原單號</span> <b class="text-gray-800 font-mono">@h.OriginalOrderNo</b></span>
+                    <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">原訂單</span> <b class="text-gray-800 font-mono text-base">@h.OriginalOrderNo</b></span>
                     <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">單別</span> @h.SoErpPrefix</span>
-                    <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">部門</span> @h.DepartmentId</span>
-                    <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">業務</span> @h.SalesRep</span>
-                    <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">單據日</span> @h.DocDate?.ToString("yyyy-MM-dd")</span>
-                    <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">幣別</span> @h.Currency</span>
-                    @if (h.ClosureStatus == "Y")
-                    { <span class="badge badge-warning text-xs">整張結案</span> }
+                    <span class="flex items-center gap-1 text-gray-600"><span class="text-gray-400 text-xs">單號</span> @h.SoErpNo</span>
                     <span class="ml-auto badge badge-info">@detailArr.Count 筆明細</span>
                 </div>
-
-                @if (!string.IsNullOrEmpty(h.Remarks))
-                {
-                    <div class="px-5 py-2.5 bg-yellow-50/80 border-t border-b border-yellow-100 text-sm text-yellow-800 flex items-center gap-2">
-                        <span>💬 備註</span> @h.Remarks
-                    </div>
-                }
-
-                @if (!string.IsNullOrEmpty(h.ChangeReason))
-                {
-                    <div class="px-5 py-2.5 bg-orange-50/80 border-t border-b border-orange-100 text-sm text-orange-800 flex items-center gap-2">
-                        <span>✏️ 變更原因</span> @h.ChangeReason
-                    </div>
-                }
 
                 <!-- 明細列表 -->
                 <div class="overflow-x-auto">
                     <table class="min-w-full">
                         <thead class="bg-gray-50/50">
                             <tr>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-16">序號</th>
                                 <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500">品號</th>
                                 <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500">品名</th>
-                                <th class="px-3 py-2 text-right text-xs font-semibold text-gray-500 w-22">原數量</th>
-                                <th class="px-3 py-2 text-right text-xs font-semibold text-gray-500 w-22">新數量</th>
-                                <th class="px-3 py-2 text-right text-xs font-semibold text-gray-500 w-22">原單價</th>
-                                <th class="px-3 py-2 text-right text-xs font-semibold text-gray-500 w-22">新單價</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-16">庫別</th>
+                                <th class="px-3 py-2 text-right text-xs font-semibold text-gray-500 w-20">數量</th>
+                                <th class="px-3 py-2 text-center text-xs font-semibold text-gray-500 w-14">單位</th>
+                                <th class="px-3 py-2 text-right text-xs font-semibold text-gray-500 w-20">單價</th>
                                 <th class="px-3 py-2 text-center text-xs font-semibold text-gray-500 w-28">原交期</th>
                                 <th class="px-3 py-2 text-center text-xs font-semibold text-gray-500 w-28">新交期</th>
                             </tr>
@@ -78,15 +59,24 @@
                             @foreach (var d in detailArr)
                             {
                                 <tr class="hover:bg-gray-50/50 text-sm">
-                                    <td class="px-3 py-1.5 font-mono text-xs text-gray-700">@d.ProductCode</td>
+                                    <td class="px-3 py-1.5 text-xs text-gray-500">@d.SeqNo</td>
+                                    <td class="px-3 py-1.5 font-mono text-xs text-gray-700">
+                                        @(string.IsNullOrEmpty(d.ProductCode) ? "—" : d.ProductCode)
+                                    </td>
                                     <td class="px-3 py-1.5">@d.ProductName</td>
-                                    <td class="px-3 py-1.5 text-right">@d.OriginalQuantity?.ToString("N2")</td>
-                                    <td class="px-3 py-1.5 text-right font-medium @(d.NewQuantity != d.OriginalQuantity ? "text-orange-600" : "")">@d.NewQuantity?.ToString("N2")</td>
-                                    <td class="px-3 py-1.5 text-right">@d.OriginalUnitPrice?.ToString("N2")</td>
-                                    <td class="px-3 py-1.5 text-right font-medium @(d.NewUnitPrice != d.OriginalUnitPrice ? "text-orange-600" : "")">@d.NewUnitPrice?.ToString("N2")</td>
+                                    <td class="px-3 py-1.5 text-xs text-gray-500">@d.Warehouse</td>
+                                    <td class="px-3 py-1.5 text-right">@d.Quantity?.ToString("N2")</td>
+                                    <td class="px-3 py-1.5 text-center">@d.Unit</td>
+                                    <td class="px-3 py-1.5 text-right">@d.UnitPrice?.ToString("N2")</td>
                                     <td class="px-3 py-1.5 text-center">@d.OriginalDeliveryDate?.ToString("yyyy-MM-dd")</td>
                                     <td class="px-3 py-1.5 text-center font-medium @(d.NewDeliveryDate != d.OriginalDeliveryDate ? "text-orange-600" : "")">@d.NewDeliveryDate?.ToString("yyyy-MM-dd")</td>
                                 </tr>
+                                @if (string.IsNullOrEmpty(d.ProductCode))
+                                {
+                                    <tr>
+                                        <td colspan="9" class="px-3 pb-2 text-xs text-red-500">⚠ 於ERP查無此序號的原始明細資料，無法拋轉，請確認單別/單號/序號是否正確</td>
+                                    </tr>
+                                }
                             }
                         </tbody>
                     </table>

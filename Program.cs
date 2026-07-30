@@ -6,6 +6,16 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+builder.Services.AddHttpContextAccessor();
+
+// Session (用於保存使用者選擇的ERP公司別，僅本次Session期間有效)
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromHours(8);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
 
 // Cookie 驗證
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -27,10 +37,13 @@ var erpConnectionString = builder.Configuration.GetConnectionString("ErpConnecti
 
 // 註冊 Services
 builder.Services.AddScoped<UserService>();
+builder.Services.AddScoped<ErpCompanyService>(sp => new ErpCompanyService(erpConnectionString));
+builder.Services.AddScoped<ErpConnectionAccessor>(sp =>
+    new ErpConnectionAccessor(erpConnectionString, sp.GetRequiredService<IHttpContextAccessor>()));
 builder.Services.AddScoped<OrderImportService>(sp =>
-    new OrderImportService(sp.GetRequiredService<DbConnectionFactory>(), erpConnectionString));
+    new OrderImportService(sp.GetRequiredService<DbConnectionFactory>(), sp.GetRequiredService<ErpConnectionAccessor>()));
 builder.Services.AddScoped<OrderChangeImportService>(sp =>
-    new OrderChangeImportService(sp.GetRequiredService<DbConnectionFactory>(), erpConnectionString));
+    new OrderChangeImportService(sp.GetRequiredService<DbConnectionFactory>(), sp.GetRequiredService<ErpConnectionAccessor>()));
 
 var app = builder.Build();
 
@@ -43,6 +56,8 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseRouting();
+
+app.UseSession();
 
 app.UseAuthentication();
 app.UseAuthorization();

@@ -68,6 +68,7 @@
                 @if (isAuthenticated)
                 {
                     <div class="flex items-center gap-3">
+                        @await Component.InvokeAsync("CompanySelector")
                         <span class="hidden sm:inline text-sm text-white/80">👤 @User.Identity?.Name</span>
                         <form asp-controller="Account" asp-action="Logout" method="post" class="inline">
                             <button type="submit" class="text-sm px-3 py-1.5 hover:bg-red-500/80 rounded-lg transition">🚪 登出</button>

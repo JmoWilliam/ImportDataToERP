@@ -128,40 +128,17 @@ GO
 -- ============================================
 -- 5. 訂單變更匯入資料表
 -- ============================================
+-- 訂單交期變更：僅需 單別/單號 識別原訂單，明細只記序號與新交期，
+-- 品號/品名/庫別/數量/單位/單價/原交期一律於匯入/拋轉時向 ERP COPTD 查詢帶出
 IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'OrderChangeHeaders') AND type = 'U')
 BEGIN
     CREATE TABLE OrderChangeHeaders (
         Id                  INT IDENTITY(1,1) PRIMARY KEY,
         ImportBatchNo       NVARCHAR(20)   NOT NULL,
         ErpOrderNo          NVARCHAR(50)   NULL,
-        ChangeType          NVARCHAR(20)   NOT NULL DEFAULT N'',  -- 數量變更/單價變更/交期變更/取消
-        SoErpPrefix         NVARCHAR(10)   NULL,
-        SoErpNo             NVARCHAR(20)   NULL,
-        OriginalOrderNo     NVARCHAR(50)   NOT NULL,
-        DocDate             DATETIME2      NULL,
-        CustomerPurchaseOrder NVARCHAR(20) NULL,
-        CustomerCode        NVARCHAR(50)   NOT NULL,
-        CustomerName        NVARCHAR(100)  NOT NULL,
-        CustomerAddressFirst NVARCHAR(200) NULL,
-        CustomerAddressSecond NVARCHAR(200) NULL,
-        DepartmentId        NVARCHAR(20)   NULL,
-        SalesRep            NVARCHAR(20)   NULL,
-        Remarks             NVARCHAR(500)  NULL,
-        ChangeReason        NVARCHAR(500)  NULL,
-        Currency            NVARCHAR(10)   NULL,
-        ExchangeRate        DECIMAL(18,4)  NOT NULL DEFAULT 1,
-        TradeTerm           NVARCHAR(10)   NULL,
-        TaxNo               NVARCHAR(10)   NULL,
-        Taxation            NVARCHAR(10)   NULL,
-        BusinessTaxRate     DECIMAL(8,5)   NOT NULL DEFAULT 0,
-        PaymentTerm         NVARCHAR(20)   NULL,
-        PriceTerm           NVARCHAR(40)   NULL,
-        DepositPartial      NVARCHAR(1)    NOT NULL DEFAULT 'N',
-        DepositRate         DECIMAL(8,5)   NOT NULL DEFAULT 0,
-        DetailMultiTax      NVARCHAR(1)    NOT NULL DEFAULT 'N',
-        ShipMethod          NVARCHAR(10)   NULL,
-        ClosureStatus       NVARCHAR(1)    NOT NULL DEFAULT 'N',
-        ConfirmStatus       NVARCHAR(1)    NOT NULL DEFAULT 'N',
+        SoErpPrefix         NVARCHAR(10)   NOT NULL,   -- 原訂單單別
+        SoErpNo             NVARCHAR(20)   NOT NULL,   -- 原訂單單號
+        OriginalOrderNo     NVARCHAR(50)   NOT NULL,   -- SoErpPrefix + SoErpNo
         DetailCount         INT            NOT NULL DEFAULT 0,
         ImportStatus        NVARCHAR(20)   NOT NULL DEFAULT N'待匯入',
         ImportedAt          DATETIME2      NULL,
@@ -178,12 +155,14 @@ BEGIN
     CREATE TABLE OrderChangeDetails (
         Id                  INT IDENTITY(1,1) PRIMARY KEY,
         HeaderId            INT            NOT NULL,
+        SeqNo               NVARCHAR(10)   NOT NULL,   -- 原訂單明細序號 (COPTD.TD003)
         ProductCode         NVARCHAR(50)   NULL,
         ProductName         NVARCHAR(100)  NULL,
-        OriginalQuantity    DECIMAL(18,4)  NULL,
-        NewQuantity         DECIMAL(18,4)  NULL,
-        OriginalUnitPrice   DECIMAL(18,4)  NULL,
-        NewUnitPrice        DECIMAL(18,4)  NULL,
+        Warehouse           NVARCHAR(10)   NULL,
+        Quantity            DECIMAL(18,4)  NULL,
+        Unit                NVARCHAR(4)    NULL,
+        UnitPrice           DECIMAL(18,4)  NULL,
+        Amount              DECIMAL(18,4)  NULL,
         OriginalDeliveryDate DATETIME2     NULL,
         NewDeliveryDate     DATETIME2      NULL,
         CreatedAt           DATETIME2      NOT NULL DEFAULT GETDATE(),

@@ -11,12 +11,12 @@ namespace ImportDataToERP.Services;
 public class OrderChangeImportService
 {
     private readonly DbConnectionFactory _db;
-    private readonly string _erpConnectionString;
+    private readonly ErpConnectionAccessor _erpConnectionAccessor;
 
-    public OrderChangeImportService(DbConnectionFactory db, string erpConnectionString)
+    public OrderChangeImportService(DbConnectionFactory db, ErpConnectionAccessor erpConnectionAccessor)
     {
         _db = db;
-        _erpConnectionString = erpConnectionString;
+        _erpConnectionAccessor = erpConnectionAccessor;
     }
 
     // ========== 查詢 ==========
@@ -62,37 +62,18 @@ public class OrderChangeImportService
         {
             var today = DateTime.Now.ToString("yyyyMMdd");
             header.ImportBatchNo = await GenerateBatchNoAsync(conn, transaction, today);
+            header.OriginalOrderNo = header.SoErpPrefix + header.SoErpNo;
             header.ImportStatus = "已匯入";
             header.ImportedAt = DateTime.Now;
             header.CreatedAt = DateTime.Now;
 
             var sql = @"
-                INSERT INTO OrderChangeHeaders 
-                    (ImportBatchNo, ErpOrderNo, ChangeType,
-                     SoErpPrefix, SoErpNo, OriginalOrderNo,
-                     DocDate, CustomerPurchaseOrder, CustomerCode, CustomerName,
-                     CustomerAddressFirst, CustomerAddressSecond,
-                     DepartmentId, SalesRep,
-                     Remarks, ChangeReason,
-                     Currency, ExchangeRate, TradeTerm,
-                     TaxNo, Taxation, BusinessTaxRate,
-                     PaymentTerm, PriceTerm,
-                     DepositPartial, DepositRate, DetailMultiTax, ShipMethod,
-                     ClosureStatus, ConfirmStatus,
-                     ImportStatus, ImportedAt, TransferStatus, CreatedAt)
-                VALUES 
-                    (@ImportBatchNo, @ErpOrderNo, @ChangeType,
-                     @SoErpPrefix, @SoErpNo, @OriginalOrderNo,
-                     @DocDate, @CustomerPurchaseOrder, @CustomerCode, @CustomerName,
-                     @CustomerAddressFirst, @CustomerAddressSecond,
-                     @DepartmentId, @SalesRep,
-                     @Remarks, @ChangeReason,
-                     @Currency, @ExchangeRate, @TradeTerm,
-                     @TaxNo, @Taxation, @BusinessTaxRate,
-                     @PaymentTerm, @PriceTerm,
-                     @DepositPartial, @DepositRate, @DetailMultiTax, @ShipMethod,
-                     @ClosureStatus, @ConfirmStatus,
-                     @ImportStatus, @ImportedAt, @TransferStatus, @CreatedAt);
+                INSERT INTO OrderChangeHeaders
+                    (ImportBatchNo, ErpOrderNo, SoErpPrefix, SoErpNo, OriginalOrderNo,
+                     DetailCount, ImportStatus, ImportedAt, TransferStatus, CreatedAt)
+                VALUES
+                    (@ImportBatchNo, @ErpOrderNo, @SoErpPrefix, @SoErpNo, @OriginalOrderNo,
+                     @DetailCount, @ImportStatus, @ImportedAt, @TransferStatus, @CreatedAt);
                 SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
             var id = await conn.ExecuteScalarAsync<int>(sql, header, transaction);
@@ -114,36 +95,12 @@ public class OrderChangeImportService
         if (transferStatus == 2)
             throw new InvalidOperationException("此變更單已拋轉ERP，單頭無法再編輯，避免與ERP資料不一致");
 
+        header.OriginalOrderNo = header.SoErpPrefix + header.SoErpNo;
         var sql = @"
             UPDATE OrderChangeHeaders SET
-                ChangeType             = @ChangeType,
-                SoErpPrefix            = @SoErpPrefix,
-                SoErpNo                = @SoErpNo,
-                OriginalOrderNo        = @OriginalOrderNo,
-                DocDate                = @DocDate,
-                CustomerPurchaseOrder  = @CustomerPurchaseOrder,
-                CustomerCode           = @CustomerCode,
-                CustomerName           = @CustomerName,
-                CustomerAddressFirst   = @CustomerAddressFirst,
-                CustomerAddressSecond  = @CustomerAddressSecond,
-                DepartmentId           = @DepartmentId,
-                SalesRep               = @SalesRep,
-                Remarks                = @Remarks,
-                ChangeReason           = @ChangeReason,
-                Currency               = @Currency,
-                ExchangeRate           = @ExchangeRate,
-                TradeTerm              = @TradeTerm,
-                TaxNo                  = @TaxNo,
-                Taxation               = @Taxation,
-                BusinessTaxRate        = @BusinessTaxRate,
-                PaymentTerm            = @PaymentTerm,
-                PriceTerm              = @PriceTerm,
-                DepositPartial         = @DepositPartial,
-                DepositRate            = @DepositRate,
-                DetailMultiTax         = @DetailMultiTax,
-                ShipMethod             = @ShipMethod,
-                ClosureStatus          = @ClosureStatus,
-                ConfirmStatus          = @ConfirmStatus
+                SoErpPrefix     = @SoErpPrefix,
+                SoErpNo         = @SoErpNo,
+                OriginalOrderNo = @OriginalOrderNo
             WHERE Id = @Id";
         return await conn.ExecuteAsync(sql, header) > 0;
     }
@@ -177,22 +134,24 @@ public class OrderChangeImportService
     public async Task<int> CreateDetailAsync(OrderChangeDetail detail)
     {
         using var conn = _db.CreateConnection();
-        var transferStatus = await conn.ExecuteScalarAsync<int?>(
-            "SELECT TransferStatus FROM OrderChangeHeaders WHERE Id = @HeaderId", new { detail.HeaderId });
-        if (transferStatus == 2)
+        var header = await conn.QueryFirstOrDefaultAsync<OrderChangeHeader>(
+            "SELECT * FROM OrderChangeHeaders WHERE Id = @HeaderId", new { detail.HeaderId });
+        if (header == null)
+            throw new InvalidOperationException("找不到對應的變更單頭");
+        if (header.TransferStatus == 2)
             throw new InvalidOperationException("此變更單已拋轉ERP，無法新增明細，避免與ERP資料不一致");
+
+        await FillOriginalDataAsync(header.SoErpPrefix, header.SoErpNo, detail);
 
         detail.CreatedAt = DateTime.Now;
         var sql = @"
             INSERT INTO OrderChangeDetails
-                (HeaderId, ProductCode, ProductName,
-                 OriginalQuantity, NewQuantity,
-                 OriginalUnitPrice, NewUnitPrice,
+                (HeaderId, SeqNo, ProductCode, ProductName, Warehouse,
+                 Quantity, Unit, UnitPrice, Amount,
                  OriginalDeliveryDate, NewDeliveryDate, CreatedAt)
             VALUES
-                (@HeaderId, @ProductCode, @ProductName,
-                 @OriginalQuantity, @NewQuantity,
-                 @OriginalUnitPrice, @NewUnitPrice,
+                (@HeaderId, @SeqNo, @ProductCode, @ProductName, @Warehouse,
+                 @Quantity, @Unit, @UnitPrice, @Amount,
                  @OriginalDeliveryDate, @NewDeliveryDate, @CreatedAt);
             SELECT CAST(SCOPE_IDENTITY() AS INT);";
         return await conn.ExecuteScalarAsync<int>(sql, detail);
@@ -201,23 +160,29 @@ public class OrderChangeImportService
     public async Task<bool> UpdateDetailAsync(OrderChangeDetail detail)
     {
         using var conn = _db.CreateConnection();
-        var transferStatus = await conn.ExecuteScalarAsync<int?>(
-            @"SELECT h.TransferStatus FROM OrderChangeDetails d
-              JOIN OrderChangeHeaders h ON h.Id = d.HeaderId
+        var header = await conn.QueryFirstOrDefaultAsync<OrderChangeHeader>(
+            @"SELECT h.* FROM OrderChangeHeaders h
+              JOIN OrderChangeDetails d ON d.HeaderId = h.Id
               WHERE d.Id = @Id", new { detail.Id });
-        if (transferStatus == 2)
+        if (header == null)
+            throw new InvalidOperationException("找不到對應的變更單頭");
+        if (header.TransferStatus == 2)
             throw new InvalidOperationException("此變更單已拋轉ERP，明細無法再編輯，避免與ERP資料不一致");
+
+        await FillOriginalDataAsync(header.SoErpPrefix, header.SoErpNo, detail);
 
         var sql = @"
             UPDATE OrderChangeDetails SET
-                ProductCode         = @ProductCode,
-                ProductName         = @ProductName,
-                OriginalQuantity    = @OriginalQuantity,
-                NewQuantity         = @NewQuantity,
-                OriginalUnitPrice   = @OriginalUnitPrice,
-                NewUnitPrice        = @NewUnitPrice,
-                OriginalDeliveryDate = @OriginalDeliveryDate,
-                NewDeliveryDate     = @NewDeliveryDate
+                SeqNo                = @SeqNo,
+                ProductCode           = @ProductCode,
+                ProductName           = @ProductName,
+                Warehouse             = @Warehouse,
+                Quantity              = @Quantity,
+                Unit                  = @Unit,
+                UnitPrice             = @UnitPrice,
+                Amount                = @Amount,
+                OriginalDeliveryDate  = @OriginalDeliveryDate,
+                NewDeliveryDate       = @NewDeliveryDate
             WHERE Id = @Id";
         return await conn.ExecuteAsync(sql, detail) > 0;
     }
@@ -236,11 +201,13 @@ public class OrderChangeImportService
     }
 
     // ========== Excel 解析 / 匯入 / 範本 ==========
+    // 匯入格式參考 Data\匯入格式_訂單交期變更.xlsx：僅 單別(col45)/單號(col46)/序號(col47)/新交期(col48) 四欄
+    // 品號/品名/庫別/數量/單位/單價/金額/原交期 一律向 ERP COPTD 查詢帶出 (依 單別+單號+序號)
 
     public async Task<OrderChangeViewModel> ParseExcelAsync(Stream fileStream, string fileName)
     {
         var result = new OrderChangeViewModel { FileName = fileName };
-        var rawRows = new List<(OrderChangeHeader hdr, OrderChangeDetail dtl)>();
+        var rawRows = new List<(string Prefix, string No, OrderChangeDetail Detail)>();
 
         using var wb = new XLWorkbook(fileStream);
         var ws = wb.Worksheet(1);
@@ -254,53 +221,21 @@ public class OrderChangeImportService
 
         for (int row = 3; row <= lastRow; row++)
         {
-            var header = new OrderChangeHeader
-            {
-                SoErpPrefix           = ws.Cell(row, 2).GetString().Trim(),
-                SoErpNo               = ws.Cell(row, 3).GetString().NullIfEmpty(),
-                OriginalOrderNo       = (ws.Cell(row, 2).GetString().Trim() + ws.Cell(row, 3).GetString().Trim()),
-                DocDate               = ParseDateTime(ws.Cell(row, 4)),
-                CustomerPurchaseOrder  = ws.Cell(row, 5).GetString().NullIfEmpty(),
-                CustomerCode           = ws.Cell(row, 6).GetString().Trim(),
-                CustomerName           = ws.Cell(row, 7).GetString().Trim(),
-                CustomerAddressFirst   = ws.Cell(row, 8).GetString().NullIfEmpty(),
-                CustomerAddressSecond  = ws.Cell(row, 9).GetString().NullIfEmpty(),
-                DepartmentId           = ws.Cell(row, 10).GetString().NullIfEmpty(),
-                SalesRep               = ws.Cell(row, 11).GetString().NullIfEmpty(),
-                Remarks                = ws.Cell(row, 12).GetString().NullIfEmpty(),
-                ChangeReason           = ws.Cell(row, 13).GetString().NullIfEmpty(),
-                Currency               = ws.Cell(row, 14).GetString().NullIfEmpty(),
-                ExchangeRate           = ws.Cell(row, 15).TryGetValue(out double er) ? (decimal)er : 1m,
-                TradeTerm              = ws.Cell(row, 16).GetString().NullIfEmpty(),
-                TaxNo                  = ws.Cell(row, 17).GetString().NullIfEmpty(),
-                Taxation               = ws.Cell(row, 18).GetString().NullIfEmpty(),
-                BusinessTaxRate        = ws.Cell(row, 19).TryGetValue(out double btr) ? (decimal)btr : 0m,
-                PaymentTerm            = ws.Cell(row, 20).GetString().NullIfEmpty(),
-                PriceTerm              = ws.Cell(row, 21).GetString().NullIfEmpty(),
-                DepositPartial         = ws.Cell(row, 22).GetString().NullIfEmpty() ?? "N",
-                DepositRate            = ws.Cell(row, 23).TryGetValue(out double dr) ? (decimal)dr : 0m,
-                DetailMultiTax         = ws.Cell(row, 24).GetString().NullIfEmpty() ?? "N",
-                ShipMethod             = ws.Cell(row, 25).GetString().NullIfEmpty(),
-                ClosureStatus          = ws.Cell(row, 26).GetString().NullIfEmpty() ?? "N",
-                ConfirmStatus          = ws.Cell(row, 27).GetString().NullIfEmpty() ?? "N",
-            };
+            var prefix = ws.Cell(row, 45).GetString().Trim();
+            var no = ws.Cell(row, 46).GetString().Trim();
+            var seqNo = ws.Cell(row, 47).GetString().Trim();
+            var newDeliveryDate = ParseDateTime(ws.Cell(row, 48));
+
+            if (string.IsNullOrWhiteSpace(prefix) && string.IsNullOrWhiteSpace(no))
+                continue;
 
             var detail = new OrderChangeDetail
             {
-                ProductCode          = ws.Cell(row, 55).GetString().NullIfEmpty(),
-                ProductName          = ws.Cell(row, 56).GetString().NullIfEmpty(),
-                OriginalQuantity     = ws.Cell(row, 57).TryGetValue(out double oq) ? (decimal)oq : null,
-                NewQuantity          = ws.Cell(row, 58).TryGetValue(out double nq) ? (decimal)nq : null,
-                OriginalUnitPrice    = ws.Cell(row, 59).TryGetValue(out double oup) ? (decimal)oup : null,
-                NewUnitPrice         = ws.Cell(row, 60).TryGetValue(out double nup) ? (decimal)nup : null,
-                OriginalDeliveryDate  = ParseDateTime(ws.Cell(row, 61)),
-                NewDeliveryDate       = ParseDateTime(ws.Cell(row, 62)),
+                SeqNo = seqNo,
+                NewDeliveryDate = newDeliveryDate,
             };
 
-            if (string.IsNullOrWhiteSpace(header.CustomerCode) && string.IsNullOrWhiteSpace(header.SoErpPrefix))
-                continue;
-
-            rawRows.Add((header, detail));
+            rawRows.Add((prefix, no, detail));
         }
 
         if (rawRows.Count == 0)
@@ -309,30 +244,26 @@ public class OrderChangeImportService
             return result;
         }
 
-        await FillMissingProductNamesAsync(rawRows.Select(r => r.dtl));
+        await FillOriginalDataAsync(rawRows.Select(r => (r.Prefix, r.No, r.Detail)));
 
         var groups = rawRows
-            .GroupBy(r => new
-            {
-                r.hdr.CustomerCode,
-                OriginalOrderNo = r.hdr.OriginalOrderNo,
-                DocDate = r.hdr.DocDate?.Date
-            })
+            .GroupBy(r => new { r.Prefix, r.No })
             .ToList();
 
         foreach (var g in groups)
         {
-            var firstHdr = g.First().hdr;
-            firstHdr.Remarks = g.Select(r => r.hdr.Remarks)
-                .FirstOrDefault(r => !string.IsNullOrWhiteSpace(r));
-            firstHdr.ChangeReason = g.Select(r => r.hdr.ChangeReason)
-                .FirstOrDefault(r => !string.IsNullOrWhiteSpace(r));
-            firstHdr.DetailCount = g.Count();
+            var header = new OrderChangeHeader
+            {
+                SoErpPrefix = g.Key.Prefix,
+                SoErpNo = g.Key.No,
+                OriginalOrderNo = g.Key.Prefix + g.Key.No,
+                DetailCount = g.Count(),
+            };
 
             result.HeaderGroups.Add(new OrderChangeHeaderGroup
             {
-                Header = firstHdr,
-                Details = g.Select(r => r.dtl).ToList()
+                Header = header,
+                Details = g.Select(r => r.Detail).ToList()
             });
         }
 
@@ -356,65 +287,26 @@ public class OrderChangeImportService
         {
             var today = DateTime.Now.ToString("yyyyMMdd");
 
-            foreach (var (group, idx) in groups.Select((g, i) => (g, i)))
+            foreach (var group in groups)
             {
                 var hdr = group.Header;
-
-                var dupCheckSql = @"
-                    SELECT COUNT(1) FROM OrderChangeHeaders
-                    WHERE CustomerCode = @CustomerCode
-                      AND OriginalOrderNo = @OriginalOrderNo
-                      AND DocDate = @DocDate
-                      AND ImportStatus = N'已匯入'";
-                var dupCount = await conn.ExecuteScalarAsync<int>(dupCheckSql, new
-                {
-                    hdr.CustomerCode,
-                    hdr.OriginalOrderNo,
-                    hdr.DocDate
-                }, transaction);
-
-                if (dupCount > 0)
-                {
-                    errors.Add($"第{idx + 1}組：客戶[{hdr.CustomerCode}] 原單號[{hdr.OriginalOrderNo}] 日期[{hdr.DocDate:yyyy-MM-dd}] 已重複匯入，略過");
-                    continue;
-                }
-
                 var batchNo = await GenerateBatchNoAsync(conn, transaction, today);
 
-                var insertHeaderSql = @"
-                    INSERT INTO OrderChangeHeaders 
-                        (ImportBatchNo, ErpOrderNo, ChangeType,
-                         SoErpPrefix, SoErpNo, OriginalOrderNo,
-                         DocDate, CustomerPurchaseOrder, CustomerCode, CustomerName,
-                         CustomerAddressFirst, CustomerAddressSecond,
-                         DepartmentId, SalesRep,
-                         Remarks, ChangeReason,
-                         Currency, ExchangeRate, TradeTerm,
-                         TaxNo, Taxation, BusinessTaxRate,
-                         PaymentTerm, PriceTerm,
-                         DepositPartial, DepositRate, DetailMultiTax, ShipMethod,
-                         ClosureStatus, ConfirmStatus,
-                         ImportStatus, ImportedAt, TransferStatus, CreatedAt)
-                    VALUES 
-                        (@ImportBatchNo, @ErpOrderNo, @ChangeType,
-                         @SoErpPrefix, @SoErpNo, @OriginalOrderNo,
-                         @DocDate, @CustomerPurchaseOrder, @CustomerCode, @CustomerName,
-                         @CustomerAddressFirst, @CustomerAddressSecond,
-                         @DepartmentId, @SalesRep,
-                         @Remarks, @ChangeReason,
-                         @Currency, @ExchangeRate, @TradeTerm,
-                         @TaxNo, @Taxation, @BusinessTaxRate,
-                         @PaymentTerm, @PriceTerm,
-                         @DepositPartial, @DepositRate, @DetailMultiTax, @ShipMethod,
-                         @ClosureStatus, @ConfirmStatus,
-                         @ImportStatus, @ImportedAt, @TransferStatus, @CreatedAt);
-                    SELECT CAST(SCOPE_IDENTITY() AS INT);";
-
                 hdr.ImportBatchNo = batchNo;
+                hdr.OriginalOrderNo = hdr.SoErpPrefix + hdr.SoErpNo;
                 hdr.ImportStatus = "已匯入";
                 hdr.ImportedAt = DateTime.Now;
                 hdr.CreatedAt = DateTime.Now;
                 hdr.TransferStatus = 1;
+
+                var insertHeaderSql = @"
+                    INSERT INTO OrderChangeHeaders
+                        (ImportBatchNo, ErpOrderNo, SoErpPrefix, SoErpNo, OriginalOrderNo,
+                         DetailCount, ImportStatus, ImportedAt, TransferStatus, CreatedAt)
+                    VALUES
+                        (@ImportBatchNo, @ErpOrderNo, @SoErpPrefix, @SoErpNo, @OriginalOrderNo,
+                         @DetailCount, @ImportStatus, @ImportedAt, @TransferStatus, @CreatedAt);
+                    SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
                 var headerId = await conn.ExecuteScalarAsync<int>(insertHeaderSql, hdr, transaction);
                 headersDone++;
@@ -426,14 +318,12 @@ public class OrderChangeImportService
 
                     var insertDetailSql = @"
                         INSERT INTO OrderChangeDetails
-                            (HeaderId, ProductCode, ProductName,
-                             OriginalQuantity, NewQuantity,
-                             OriginalUnitPrice, NewUnitPrice,
+                            (HeaderId, SeqNo, ProductCode, ProductName, Warehouse,
+                             Quantity, Unit, UnitPrice, Amount,
                              OriginalDeliveryDate, NewDeliveryDate, CreatedAt)
                         VALUES
-                            (@HeaderId, @ProductCode, @ProductName,
-                             @OriginalQuantity, @NewQuantity,
-                             @OriginalUnitPrice, @NewUnitPrice,
+                            (@HeaderId, @SeqNo, @ProductCode, @ProductName, @Warehouse,
+                             @Quantity, @Unit, @UnitPrice, @Amount,
                              @OriginalDeliveryDate, @NewDeliveryDate, @CreatedAt)";
 
                     await conn.ExecuteAsync(insertDetailSql, dtl, transaction);
@@ -455,72 +345,30 @@ public class OrderChangeImportService
     public byte[] GenerateTemplateExcel()
     {
         using var wb = new XLWorkbook();
-        var ws = wb.AddWorksheet("批次匯入變更表");
+        var ws = wb.AddWorksheet("批次匯入表");
 
         ws.Cell(1, 1).Value = "說明欄";
-        ws.Cell(1, 8).Value = "地址字數建議200以內";
-        ws.Cell(1, 15).Value = "ex:31.5";
-        ws.Cell(1, 18).Value = "1.內含 2.外加 3.零稅率 4.免稅 9.不計稅";
-        ws.Cell(1, 22).Value = "Y/N";
-        ws.Cell(1, 24).Value = "Y/N";
-        ws.Cell(1, 26).Value = "Y/N";
-        ws.Cell(1, 27).Value = "Y/N/V";
+        ws.Cell(1, 48).Value = "格式:YYYYMMDD";
 
-        ws.Cell(2, 2).Value = "原單別";
-        ws.Cell(2, 3).Value = "原單號";
-        ws.Cell(2, 4).Value = "單據日期";
-        ws.Cell(2, 5).Value = "客戶採購單";
-        ws.Cell(2, 6).Value = "客戶代號";
-        ws.Cell(2, 7).Value = "客戶名稱";
-        ws.Cell(2, 8).Value = "地址(一)";
-        ws.Cell(2, 9).Value = "地址(二)";
-        ws.Cell(2, 10).Value = "部門代號";
-        ws.Cell(2, 11).Value = "業務人員";
-        ws.Cell(2, 12).Value = "備註";
-        ws.Cell(2, 13).Value = "變更原因";
-        ws.Cell(2, 14).Value = "幣別";
-        ws.Cell(2, 15).Value = "匯率";
-        ws.Cell(2, 16).Value = "交易條件";
-        ws.Cell(2, 17).Value = "稅別碼";
-        ws.Cell(2, 18).Value = "課稅別";
-        ws.Cell(2, 19).Value = "營業稅率";
-        ws.Cell(2, 20).Value = "付款條件";
-        ws.Cell(2, 21).Value = "價格條件";
-        ws.Cell(2, 22).Value = "訂金分批";
-        ws.Cell(2, 23).Value = "訂金比率";
-        ws.Cell(2, 24).Value = "單身多稅率";
-        ws.Cell(2, 25).Value = "運輸方式";
-        ws.Cell(2, 26).Value = "整張結案";
-        ws.Cell(2, 27).Value = "確認碼";
+        ws.Cell(2, 45).Value = "單別";
+        ws.Cell(2, 46).Value = "單號";
+        ws.Cell(2, 47).Value = "序號";
+        ws.Cell(2, 48).Value = "新交期";
 
-        ws.Cell(2, 55).Value = "品號";
-        ws.Cell(2, 56).Value = "品名";
-        ws.Cell(2, 57).Value = "原數量";
-        ws.Cell(2, 58).Value = "新數量";
-        ws.Cell(2, 59).Value = "原單價";
-        ws.Cell(2, 60).Value = "新單價";
-        ws.Cell(2, 61).Value = "原交期";
-        ws.Cell(2, 62).Value = "新交期";
-
-        var headerRange = ws.Range(2, 2, 2, 27);
+        var headerRange = ws.Range(2, 45, 2, 48);
         headerRange.Style.Font.Bold = true;
         headerRange.Style.Fill.BackgroundColor = XLColor.LightGray;
 
-        var detailRange = ws.Range(2, 55, 2, 62);
-        detailRange.Style.Font.Bold = true;
-        detailRange.Style.Fill.BackgroundColor = XLColor.LightGray;
-
-        ws.Columns(2, 27).Width = 14;
-        ws.Columns(55, 62).Width = 14;
+        ws.Columns(45, 48).Width = 14;
 
         using var ms = new MemoryStream();
         wb.SaveAs(ms);
         return ms.ToArray();
     }
 
-    // ========== 拋轉 ERP (訂單變更單 → COPTE / COPTF) ==========
+    // ========== 拋轉 ERP (訂單交期變更 → COPTE / COPTF) ==========
 
-    public async Task<string> TransferToErpAsync(int headerId)
+    public async Task<string> TransferToErpAsync(int headerId, string operatorAccount)
     {
         var header = await GetHeaderByIdAsync(headerId);
         if (header == null) return "單據不存在";
@@ -532,307 +380,98 @@ public class OrderChangeImportService
         if (details.Count == 0) return "無明細資料，無法拋轉";
 
         if (details.Any(d => string.IsNullOrWhiteSpace(d.ProductCode)))
-            return "部分明細無品號，無法拋轉";
+            return "部分明細於ERP查無原始品號資料，無法拋轉";
 
         var dateNow = DateTime.Now.ToString("yyyyMMdd");
-        var erpPrefix = header.SoErpPrefix ?? "CHG";
-        var erpNo = "";
+        var erpPrefix = header.SoErpPrefix;
+        var erpNo = header.SoErpNo;
         string companyNo = "";
-
-        // 前置：字串截斷 helper
-        string Trunc(string? s) =>
-            s == null ? "" : s.Length > 255 ? s[..255] : s;
-
-        // Defaults
-        var docDateStr = header.DocDate?.ToString("yyyyMMdd") ?? "";
-        var changeReason = Trunc(header.ChangeReason);
-        var remarks = Trunc(header.Remarks);
+        string changeVer = "0001";
 
         try
         {
             // === Phase 1: ERP 端操作 (TransactionScope 包裹) ===
             {
                 using var ts = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled);
-                using var erpConn = new SqlConnection(_erpConnectionString);
+                using var erpConn = new SqlConnection(_erpConnectionAccessor.GetConnectionString());
                 await erpConn.OpenAsync();
 
-                // 取得廠別 (CMSMB)
+                // 取得公司別 (CMSMB)
                 var factoryResult = await erpConn.QueryFirstOrDefaultAsync<dynamic>(
                     "SELECT TOP 1 RTRIM(LTRIM(COMPANY)) COMPANY FROM CMSMB");
                 if (factoryResult != null)
-                {
                     companyNo = factoryResult.COMPANY ?? "";
-                }
 
-                // 檢查單據設定 CMSMQ（用 COPTE 的單別查詢編碼規則）
-                var docSetting = await erpConn.QueryFirstOrDefaultAsync<dynamic>(
-                    @"SELECT MQ004, MQ005, MQ006 FROM CMSMQ WHERE MQ001 = @ErpPrefix",
-                    new { ErpPrefix = erpPrefix });
-
-                string encode = "3";
-                int yearLength = 0, lineLength = 4;
-                if (docSetting != null)
-                {
-                    encode = docSetting.MQ004?.ToString() ?? "3";
-                    yearLength = Convert.ToInt32(docSetting.MQ005 ?? 0);
-                    lineLength = Convert.ToInt32(docSetting.MQ006 ?? 4);
-                }
-
-                // 產生 ERP 單號 TE002（查 COPTE 表，非 COPTC）
-                var refDate = header.DocDate ?? DateTime.Now;
-                string datePart = encode switch
-                {
-                    "1" => refDate.ToString(new string('y', Math.Max(yearLength, 1)) + "MMdd"),
-                    "2" => refDate.ToString(new string('y', Math.Max(yearLength, 1)) + "MM"),
-                    "4" => header.SoErpNo ?? "",
-                    _ => ""
-                };
-
-                var numResult = await erpConn.QueryFirstOrDefaultAsync<dynamic>(
-                    $@"SELECT CONVERT(INT, RIGHT(ISNULL(MAX(RTRIM(LTRIM(TE002))), '{new string('0', lineLength)}'), {lineLength})) + 1 CurrentNum
-                       FROM COPTE WHERE TE001 = @ErpPrefix" +
-                       (string.IsNullOrEmpty(datePart) ? "" : " AND RTRIM(LTRIM(TE002)) LIKE @DatePart + '" + new string('_', lineLength) + "'"),
-                    new { ErpPrefix = erpPrefix, DatePart = datePart });
-
-                int currentNum = numResult != null ? Convert.ToInt32(numResult.CurrentNum) : 1;
-                erpNo = datePart + currentNum.ToString(new string('0', lineLength));
+                // 產生變更版次 TE003 (同一張原訂單可能已變更過，取現有最大版次+1)
+                var maxVer = await erpConn.ExecuteScalarAsync<string?>(
+                    "SELECT MAX(RTRIM(LTRIM(TE003))) FROM COPTE WHERE RTRIM(TE001) = @Prefix AND RTRIM(TE002) = @No",
+                    new { Prefix = erpPrefix, No = erpNo });
+                if (int.TryParse(maxVer, out var lastVer))
+                    changeVer = (lastVer + 1).ToString("D4");
 
                 // ========== 寫入 COPTE (訂單變更單頭) ==========
-                // TE001-TE078: 新值, TE103/TE107-TE152/TE163-TE178: 原值 (此ERP版本欄位較少，依 訂單相關資料表.xlsx 比對)
                 var coptEParams = new
                 {
                     COMPANY = companyNo, CREATOR = "IMPORT", USR_GROUP = "",
                     CREATE_DATE = dateNow,
                     MODIFIER = "", MODI_DATE = "", FLAG = "1",
-
-                    // ---- 新值 TE001-TE078 ----
-                    TE001 = erpPrefix,
-                    TE002 = erpNo,
-                    TE003 = "0001",
-                    TE004 = docDateStr,
-                    TE005 = header.ClosureStatus ?? "N",
-                    TE006 = changeReason,
-                    TE007 = header.CustomerCode ?? "",
-                    TE008 = header.DepartmentId ?? "",
-                    TE009 = header.SalesRep ?? "",
-                    TE010 = "",
-                    TE011 = header.Currency ?? "",
-                    TE012 = header.ExchangeRate,
-                    TE013 = header.CustomerAddressFirst ?? "",
-                    TE014 = header.CustomerAddressSecond ?? "",
-                    TE015 = header.CustomerPurchaseOrder ?? "",
-                    TE016 = header.PriceTerm ?? "",
-                    TE017 = header.PaymentTerm ?? "",
-                    TE018 = header.Taxation ?? "1",
-                    TE019 = "", TE020 = "", TE021 = "", TE022 = "", TE023 = "",
-                    TE024 = "", TE025 = "", TE026 = "", TE027 = "", TE028 = "",
-                    TE029 = header.ConfirmStatus ?? "N",
-                    TE030 = 0,
-                    TE031 = "", TE032 = "", TE033 = "", TE034 = "",
-                    TE035 = "", TE036 = "", TE037 = "",
-                    TE038 = docDateStr,
-                    TE039 = "",
-                    TE040 = header.BusinessTaxRate,
-                    TE041 = "",
-                    TE042 = header.DepositRate,
-                    TE043 = "",
-                    TE044 = "N",
-                    TE045 = "N",
-                    TE046 = 0,
-                    TE047 = "", TE048 = "", TE049 = "",
-                    TE050 = remarks,
-                    TE051 = "", TE052 = 0, TE053 = "", TE054 = "N",
-                    TE055 = header.CustomerName ?? "",
-                    TE056 = "", TE057 = "", TE058 = "", TE059 = "", TE060 = "",
-                    TE061 = header.TradeTerm ?? "",
-                    TE062 = "",
-                    TE063 = 0, TE064 = "", TE065 = 0, TE066 = "", TE067 = "",
-                    TE068 = "N",
-                    TE069 = header.TaxNo ?? "",
-                    TE070 = "", TE071 = "", TE072 = "", TE073 = "", TE074 = "",
-                    TE075 = "", TE076 = "", TE077 = "", TE078 = "",
-
-                    // ---- 原值 TE103, TE107-TE152, TE163-TE178（此ERP版本無 TE104-106/TE153-162/TE179-182）----
-                    TE103 = "0001",
-                    TE107 = header.CustomerCode ?? "",
-                    TE108 = header.DepartmentId ?? "",
-                    TE109 = header.SalesRep ?? "",
-                    TE110 = "",
-                    TE111 = header.Currency ?? "",
-                    TE112 = header.ExchangeRate,
-                    TE113 = header.CustomerAddressFirst ?? "",
-                    TE114 = header.CustomerAddressSecond ?? "",
-                    TE115 = header.CustomerPurchaseOrder ?? "",
-                    TE116 = header.PriceTerm ?? "",
-                    TE117 = header.PaymentTerm ?? "",
-                    TE118 = header.Taxation ?? "1",
-                    TE119 = "", TE120 = "", TE121 = "", TE122 = "", TE123 = "",
-                    TE124 = "", TE125 = "", TE126 = "", TE127 = "", TE128 = "",
-                    TE129 = header.ConfirmStatus ?? "N",
-                    TE130 = 0,
-                    TE131 = "", TE132 = "", TE133 = "", TE134 = "",
-                    TE135 = "", TE136 = "", TE137 = "",
-                    TE138 = docDateStr,
-                    TE139 = "",
-                    TE140 = header.BusinessTaxRate,
-                    TE141 = "",
-                    TE142 = header.DepositRate,
-                    TE143 = "",
-                    TE144 = "N",
-                    TE145 = "N",
-                    TE146 = 0,
-                    TE147 = "", TE148 = "", TE149 = "",
-                    TE150 = remarks,
-                    TE151 = "", TE152 = 0,
-                    TE163 = 0, TE164 = "", TE165 = 0, TE166 = "", TE167 = "",
-                    TE168 = "N",
-                    TE169 = header.TaxNo ?? "",
-                    TE170 = "", TE171 = "", TE172 = "", TE173 = "", TE174 = "",
-                    TE175 = "", TE176 = "", TE177 = "", TE178 = "",
+                    TE001 = erpPrefix, TE002 = erpNo, TE003 = changeVer,
+                    TE004 = dateNow, TE005 = "N", TE006 = "交期變更",
                 };
 
                 await erpConn.ExecuteAsync(@"
-                    INSERT INTO COPTE (COMPANY, CREATOR, USR_GROUP, CREATE_DATE
-                        , MODIFIER, MODI_DATE, FLAG
-                        , TE001, TE002, TE003, TE004, TE005, TE006, TE007, TE008, TE009, TE010
-                        , TE011, TE012, TE013, TE014, TE015, TE016, TE017, TE018, TE019, TE020
-                        , TE021, TE022, TE023, TE024, TE025, TE026, TE027, TE028, TE029, TE030
-                        , TE031, TE032, TE033, TE034, TE035, TE036, TE037, TE038, TE039, TE040
-                        , TE041, TE042, TE043, TE044, TE045, TE046, TE047, TE048, TE049, TE050
-                        , TE051, TE052, TE053, TE054, TE055, TE056, TE057, TE058, TE059, TE060
-                        , TE061, TE062, TE063, TE064, TE065, TE066, TE067, TE068, TE069, TE070
-                        , TE071, TE072, TE073, TE074, TE075, TE076, TE077, TE078
-                        , TE103, TE107, TE108, TE109, TE110
-                        , TE111, TE112, TE113, TE114, TE115, TE116, TE117, TE118, TE119, TE120
-                        , TE121, TE122, TE123, TE124, TE125, TE126, TE127, TE128, TE129, TE130
-                        , TE131, TE132, TE133, TE134, TE135, TE136, TE137, TE138, TE139, TE140
-                        , TE141, TE142, TE143, TE144, TE145, TE146, TE147, TE148, TE149, TE150
-                        , TE151, TE152
-                        , TE163, TE164, TE165, TE166, TE167, TE168, TE169, TE170
-                        , TE171, TE172, TE173, TE174, TE175, TE176, TE177, TE178)
-                    VALUES (@COMPANY, @CREATOR, @USR_GROUP, @CREATE_DATE
-                        , @MODIFIER, @MODI_DATE, @FLAG
-                        , @TE001, @TE002, @TE003, @TE004, @TE005, @TE006, @TE007, @TE008, @TE009, @TE010
-                        , @TE011, @TE012, @TE013, @TE014, @TE015, @TE016, @TE017, @TE018, @TE019, @TE020
-                        , @TE021, @TE022, @TE023, @TE024, @TE025, @TE026, @TE027, @TE028, @TE029, @TE030
-                        , @TE031, @TE032, @TE033, @TE034, @TE035, @TE036, @TE037, @TE038, @TE039, @TE040
-                        , @TE041, @TE042, @TE043, @TE044, @TE045, @TE046, @TE047, @TE048, @TE049, @TE050
-                        , @TE051, @TE052, @TE053, @TE054, @TE055, @TE056, @TE057, @TE058, @TE059, @TE060
-                        , @TE061, @TE062, @TE063, @TE064, @TE065, @TE066, @TE067, @TE068, @TE069, @TE070
-                        , @TE071, @TE072, @TE073, @TE074, @TE075, @TE076, @TE077, @TE078
-                        , @TE103, @TE107, @TE108, @TE109, @TE110
-                        , @TE111, @TE112, @TE113, @TE114, @TE115, @TE116, @TE117, @TE118, @TE119, @TE120
-                        , @TE121, @TE122, @TE123, @TE124, @TE125, @TE126, @TE127, @TE128, @TE129, @TE130
-                        , @TE131, @TE132, @TE133, @TE134, @TE135, @TE136, @TE137, @TE138, @TE139, @TE140
-                        , @TE141, @TE142, @TE143, @TE144, @TE145, @TE146, @TE147, @TE148, @TE149, @TE150
-                        , @TE151, @TE152
-                        , @TE163, @TE164, @TE165, @TE166, @TE167, @TE168, @TE169, @TE170
-                        , @TE171, @TE172, @TE173, @TE174, @TE175, @TE176, @TE177, @TE178)", coptEParams);
+                    INSERT INTO COPTE (COMPANY, CREATOR, USR_GROUP, CREATE_DATE, MODIFIER, MODI_DATE, FLAG,
+                        TE001, TE002, TE003, TE004, TE005, TE006)
+                    VALUES (@COMPANY, @CREATOR, @USR_GROUP, @CREATE_DATE, @MODIFIER, @MODI_DATE, @FLAG,
+                        @TE001, @TE002, @TE003, @TE004, @TE005, @TE006)", coptEParams);
 
                 // ========== 寫入 COPTF (訂單變更單身) ==========
+                // 新值區塊(TF)與原值區塊(TF1xx)：僅交期不同(TF015=新交期/TF115=原交期)，其餘品號/數量/單價維持不變
                 foreach (var d in details)
                 {
-                    var seqNo = (details.IndexOf(d) + 1).ToString("D4");
                     var coptFParams = new
                     {
                         COMPANY = companyNo, CREATOR = "IMPORT", USR_GROUP = "",
                         CREATE_DATE = dateNow,
                         MODIFIER = "", MODI_DATE = "", FLAG = "1",
 
-                        TF001 = erpPrefix,
-                        TF002 = erpNo,
-                        TF003 = "0001",
-                        TF004 = seqNo,
-                        TF005 = d.ProductCode ?? "",
-                        TF006 = d.ProductName ?? "",
-                        TF007 = "",
-                        TF008 = "",
-                        TF009 = d.NewQuantity ?? 0,
-                        TF010 = "",
-                        TF011 = 0, TF012 = "",
-                        TF013 = d.NewUnitPrice ?? 0,
-                        TF014 = (d.NewUnitPrice ?? 0) * (d.NewQuantity ?? 0),
+                        TF001 = erpPrefix, TF002 = erpNo, TF003 = changeVer, TF004 = d.SeqNo,
+                        TF005 = d.ProductCode ?? "", TF006 = d.ProductName ?? "",
+                        TF008 = d.Warehouse ?? "", TF009 = d.Quantity ?? 0, TF010 = d.Unit ?? "",
+                        TF013 = d.UnitPrice ?? 0, TF014 = d.Amount ?? 0,
                         TF015 = d.NewDeliveryDate?.ToString("yyyyMMdd") ?? "",
-                        TF016 = "",
                         TF017 = "N",
-                        TF018 = changeReason,
-                        TF019 = "N",
-                        TF020 = "", TF021 = "", TF022 = "", TF023 = "", TF024 = "",
-                        TF025 = "", TF026 = "", TF027 = "", TF028 = "", TF029 = "",
-                        TF034 = "", TF035 = "", TF036 = "",
-                        TF037 = "", TF038 = "", TF039 = "", TF040 = "", TF041 = "", TF042 = "",
-                        TF043 = "", TF044 = "", TF045 = "", TF046 = "",
-                        TF048 = "",
-                        TF049 = "", TF050 = "", TF051 = "", TF052 = "", TF053 = "", TF054 = "",
-                        TF055 = "", TF056 = "", TF057 = "", TF058 = "", TF059 = "", TF060 = "",
-                        TF061 = "",
 
-                        // ---- 原值 TF104-TF117, TF120-TF134, TF136-TF161（此ERP版本無 TF118-119/TF135/TF162-177）----
-                        TF104 = seqNo,
-                        TF105 = d.ProductCode ?? "",
-                        TF106 = d.ProductName ?? "",
-                        TF107 = "", TF108 = "",
-                        TF109 = d.OriginalQuantity ?? 0,
-                        TF110 = "", TF111 = 0, TF112 = "",
-                        TF113 = d.OriginalUnitPrice ?? 0,
-                        TF114 = (d.OriginalUnitPrice ?? 0) * (d.OriginalQuantity ?? 0),
+                        TF104 = d.SeqNo, TF105 = d.ProductCode ?? "", TF106 = d.ProductName ?? "",
+                        TF108 = d.Warehouse ?? "", TF109 = d.Quantity ?? 0, TF110 = d.Unit ?? "",
+                        TF113 = d.UnitPrice ?? 0, TF114 = d.Amount ?? 0,
                         TF115 = d.OriginalDeliveryDate?.ToString("yyyyMMdd") ?? "",
-                        TF116 = "", TF117 = "N",
-                        TF120 = "", TF121 = "", TF122 = "", TF123 = "", TF124 = "", TF125 = "",
-                        TF126 = "", TF127 = "", TF128 = "", TF129 = "", TF130 = "", TF131 = "",
-                        TF132 = "", TF133 = "", TF134 = "",
-                        TF136 = "", TF137 = "",
-                        TF138 = "", TF139 = "", TF140 = "", TF141 = "", TF142 = "", TF143 = "",
-                        TF144 = "", TF145 = "", TF146 = "", TF147 = "", TF148 = "", TF149 = "",
-                        TF150 = "", TF151 = "", TF152 = "", TF153 = "", TF154 = "", TF155 = "",
-                        TF156 = "", TF157 = "", TF158 = "", TF159 = "", TF160 = "", TF161 = "",
-
-                        // ---- TF500-TF509 ----
-                        TF500 = "", TF501 = 0, TF502 = "", TF503 = "", TF504 = "N",
-                        TF505 = "", TF506 = 0, TF507 = "", TF508 = "", TF509 = "N",
+                        TF117 = "N",
                     };
 
                     await erpConn.ExecuteAsync(@"
-                        INSERT INTO COPTF (COMPANY, CREATOR, USR_GROUP, CREATE_DATE
-                            , MODIFIER, MODI_DATE, FLAG
-                            , TF001, TF002, TF003, TF004, TF005, TF006, TF007, TF008, TF009, TF010
-                            , TF011, TF012, TF013, TF014, TF015, TF016, TF017, TF018, TF019, TF020
-                            , TF021, TF022, TF023, TF024, TF025, TF026, TF027, TF028, TF029
-                            , TF034, TF035, TF036, TF037, TF038, TF039, TF040
-                            , TF041, TF042, TF043, TF044, TF045, TF046
-                            , TF048, TF049, TF050
-                            , TF051, TF052, TF053, TF054, TF055, TF056, TF057, TF058, TF059, TF060
-                            , TF061
-                            , TF104, TF105, TF106, TF107, TF108, TF109, TF110
-                            , TF111, TF112, TF113, TF114, TF115, TF116, TF117
-                            , TF120, TF121, TF122, TF123, TF124, TF125, TF126, TF127, TF128, TF129, TF130
-                            , TF131, TF132, TF133, TF134
-                            , TF136, TF137, TF138, TF139, TF140
-                            , TF141, TF142, TF143, TF144, TF145, TF146, TF147, TF148, TF149, TF150
-                            , TF151, TF152, TF153, TF154, TF155, TF156, TF157, TF158, TF159, TF160
-                            , TF161
-                            , TF500, TF501, TF502, TF503, TF504
-                            , TF505, TF506, TF507, TF508, TF509)
-                        VALUES (@COMPANY, @CREATOR, @USR_GROUP, @CREATE_DATE
-                            , @MODIFIER, @MODI_DATE, @FLAG
-                            , @TF001, @TF002, @TF003, @TF004, @TF005, @TF006, @TF007, @TF008, @TF009, @TF010
-                            , @TF011, @TF012, @TF013, @TF014, @TF015, @TF016, @TF017, @TF018, @TF019, @TF020
-                            , @TF021, @TF022, @TF023, @TF024, @TF025, @TF026, @TF027, @TF028, @TF029
-                            , @TF034, @TF035, @TF036, @TF037, @TF038, @TF039, @TF040
-                            , @TF041, @TF042, @TF043, @TF044, @TF045, @TF046
-                            , @TF048, @TF049, @TF050
-                            , @TF051, @TF052, @TF053, @TF054, @TF055, @TF056, @TF057, @TF058, @TF059, @TF060
-                            , @TF061
-                            , @TF104, @TF105, @TF106, @TF107, @TF108, @TF109, @TF110
-                            , @TF111, @TF112, @TF113, @TF114, @TF115, @TF116, @TF117
-                            , @TF120, @TF121, @TF122, @TF123, @TF124, @TF125, @TF126, @TF127, @TF128, @TF129, @TF130
-                            , @TF131, @TF132, @TF133, @TF134
-                            , @TF136, @TF137, @TF138, @TF139, @TF140
-                            , @TF141, @TF142, @TF143, @TF144, @TF145, @TF146, @TF147, @TF148, @TF149, @TF150
-                            , @TF151, @TF152, @TF153, @TF154, @TF155, @TF156, @TF157, @TF158, @TF159, @TF160
-                            , @TF161
-                            , @TF500, @TF501, @TF502, @TF503, @TF504
-                            , @TF505, @TF506, @TF507, @TF508, @TF509)", coptFParams);
+                        INSERT INTO COPTF (COMPANY, CREATOR, USR_GROUP, CREATE_DATE, MODIFIER, MODI_DATE, FLAG,
+                            TF001, TF002, TF003, TF004, TF005, TF006, TF008, TF009, TF010, TF013, TF014, TF015, TF017,
+                            TF104, TF105, TF106, TF108, TF109, TF110, TF113, TF114, TF115, TF117)
+                        VALUES (@COMPANY, @CREATOR, @USR_GROUP, @CREATE_DATE, @MODIFIER, @MODI_DATE, @FLAG,
+                            @TF001, @TF002, @TF003, @TF004, @TF005, @TF006, @TF008, @TF009, @TF010, @TF013, @TF014, @TF015, @TF017,
+                            @TF104, @TF105, @TF106, @TF108, @TF109, @TF110, @TF113, @TF114, @TF115, @TF117)", coptFParams);
+
+                    // ========== 同步更新原訂單 COPTD：預交日/確認碼(預設Y)/確認者(Login帳號) ==========
+                    await erpConn.ExecuteAsync(@"
+                        UPDATE COPTD SET
+                            TD013 = @NewDeliveryDate,
+                            TD021 = 'Y',
+                            MODIFIER = @Operator,
+                            MODI_DATE = @ModiDate
+                        WHERE RTRIM(TD001) = @Prefix AND RTRIM(TD002) = @No AND RTRIM(TD003) = @SeqNo",
+                        new
+                        {
+                            NewDeliveryDate = d.NewDeliveryDate?.ToString("yyyyMMdd") ?? "",
+                            Operator = operatorAccount.Length > 10 ? operatorAccount[..10] : operatorAccount,
+                            ModiDate = dateNow,
+                            Prefix = erpPrefix, No = erpNo, SeqNo = d.SeqNo
+                        });
                 }
 
                 ts.Complete();
@@ -841,12 +480,12 @@ public class OrderChangeImportService
             // === Phase 2: 更新本地狀態（TransactionScope 已結束，不會 enlist 衝突）===
             using var localConn = _db.CreateConnection();
             await localConn.ExecuteAsync(
-                @"UPDATE OrderChangeHeaders 
+                @"UPDATE OrderChangeHeaders
                   SET TransferStatus = 2, TransferMessage = NULL, ErpOrderNo = @ErpOrderNo
                   WHERE Id = @Id",
-                new { Id = headerId, ErpOrderNo = $"{erpPrefix}-{erpNo}" });
+                new { Id = headerId, ErpOrderNo = $"{erpPrefix}-{erpNo}-{changeVer}" });
 
-            return $"OK|{erpPrefix}-{erpNo}";
+            return $"OK|{erpPrefix}-{erpNo}-{changeVer}";
         }
         catch (Exception ex)
         {
@@ -855,7 +494,7 @@ public class OrderChangeImportService
             {
                 using var localConn = _db.CreateConnection();
                 await localConn.ExecuteAsync(
-                    @"UPDATE OrderChangeHeaders 
+                    @"UPDATE OrderChangeHeaders
                       SET TransferStatus = 3, TransferMessage = @Msg
                       WHERE Id = @Id",
                     new { Id = headerId, Msg = ex.Message.Length > 400 ? ex.Message[..400] : ex.Message });
@@ -868,42 +507,72 @@ public class OrderChangeImportService
 
     // ========== Private Helpers ==========
 
-    /// <summary>Excel 未填品名時，依品號查詢 ERP 品號主檔 (INVMB.MB001/MB002) 帶出品名</summary>
-    private async Task FillMissingProductNamesAsync(IEnumerable<OrderChangeDetail> details)
+    /// <summary>依單別+單號+序號查詢 ERP COPTD，帶出品號/品名/庫別/數量/單位/單價/金額/原交期 (批次版本，供 Excel 解析用)</summary>
+    private async Task FillOriginalDataAsync(IEnumerable<(string Prefix, string No, OrderChangeDetail Detail)> rows)
     {
-        var codes = details
-            .Where(d => !string.IsNullOrWhiteSpace(d.ProductCode) && string.IsNullOrWhiteSpace(d.ProductName))
-            .Select(d => d.ProductCode!.Trim())
-            .Distinct()
-            .ToList();
-
-        if (codes.Count == 0) return;
-
         try
         {
-            using var erpConn = new SqlConnection(_erpConnectionString);
-            var rows = await erpConn.QueryAsync<ProductLookup>(
-                "SELECT RTRIM(MB001) AS ProductCode, RTRIM(MB002) AS ProductName FROM INVMB WHERE RTRIM(MB001) IN @Codes",
-                new { Codes = codes });
+            using var erpConn = new SqlConnection(_erpConnectionAccessor.GetConnectionString());
+            await erpConn.OpenAsync();
 
-            var map = rows.ToDictionary(r => r.ProductCode, r => r.ProductName, StringComparer.OrdinalIgnoreCase);
-
-            foreach (var d in details)
+            foreach (var (prefix, no, detail) in rows)
             {
-                if (!string.IsNullOrWhiteSpace(d.ProductCode) && string.IsNullOrWhiteSpace(d.ProductName)
-                    && map.TryGetValue(d.ProductCode.Trim(), out var name))
-                {
-                    d.ProductName = name;
-                }
+                await TryFillDetailFromErpAsync(erpConn, prefix, no, detail);
             }
         }
         catch
         {
-            // ERP 無法連線時略過帶入品名，維持原有空白讓使用者手動補齊
+            // ERP 無法連線時略過帶入原始資料，維持空白讓使用者於拋轉前手動確認
         }
     }
 
-    private sealed record ProductLookup(string ProductCode, string ProductName);
+    /// <summary>依單別+單號+序號查詢 ERP COPTD，帶出品號/品名/庫別/數量/單位/單價/金額/原交期 (單筆版本，供手動新增/編輯明細用)</summary>
+    private async Task FillOriginalDataAsync(string prefix, string no, OrderChangeDetail detail)
+    {
+        try
+        {
+            using var erpConn = new SqlConnection(_erpConnectionAccessor.GetConnectionString());
+            await erpConn.OpenAsync();
+            await TryFillDetailFromErpAsync(erpConn, prefix, no, detail);
+        }
+        catch
+        {
+            // ERP 無法連線時略過帶入原始資料
+        }
+    }
+
+    private static async Task<bool> TryFillDetailFromErpAsync(SqlConnection erpConn, string prefix, string no, OrderChangeDetail detail)
+    {
+        var line = await erpConn.QueryFirstOrDefaultAsync<OriginalDetailLookup>(
+            @"SELECT RTRIM(TD004) AS ProductCode, RTRIM(TD005) AS ProductName,
+                     RTRIM(TD007) AS Warehouse, TD008 AS Quantity, RTRIM(TD010) AS Unit,
+                     TD011 AS UnitPrice, TD012 AS Amount, RTRIM(TD013) AS DeliveryDateRaw
+              FROM COPTD WHERE RTRIM(TD001) = @Prefix AND RTRIM(TD002) = @No AND RTRIM(TD003) = @SeqNo",
+            new { Prefix = prefix, No = no, SeqNo = detail.SeqNo.Trim() });
+
+        if (line == null) return false;
+
+        detail.ProductCode = line.ProductCode;
+        detail.ProductName = line.ProductName;
+        detail.Warehouse = line.Warehouse;
+        detail.Quantity = line.Quantity;
+        detail.Unit = line.Unit;
+        detail.UnitPrice = line.UnitPrice;
+        detail.Amount = line.Amount;
+        detail.OriginalDeliveryDate = ParseYmd(line.DeliveryDateRaw);
+        return true;
+    }
+
+    private sealed record OriginalDetailLookup(
+        string ProductCode, string ProductName, string Warehouse,
+        decimal Quantity, string Unit, decimal UnitPrice, decimal Amount, string DeliveryDateRaw);
+
+    private static DateTime? ParseYmd(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        return DateTime.TryParseExact(s.Trim(), "yyyyMMdd", null,
+            System.Globalization.DateTimeStyles.None, out var dt) ? dt : null;
+    }
 
     private async Task<string> GenerateBatchNoAsync(SqlConnection conn, SqlTransaction transaction, string today)
     {
@@ -935,11 +604,24 @@ public class OrderChangeImportService
             return cell.GetDateTime();
         if (cell.TryGetValue(out DateTime dt))
             return dt;
-        if (cell.TryGetValue(out double d) && d > 1)
+
+        // ERP 交期慣例：以 YYYYMMDD 存放 (文字或一般數字格式)，非 Excel 日期序列值
+        if (cell.TryGetValue(out double d))
         {
-            try { return DateTime.FromOADate(d); } catch { }
+            if (d is >= 19000101 and <= 99991231 && DateTime.TryParseExact(
+                    ((long)d).ToString(), "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out var ymd))
+                return ymd;
+
+            if (d > 1)
+            {
+                try { return DateTime.FromOADate(d); } catch { }
+            }
         }
+
         var text = cell.GetString().Trim();
+        if (text.Length == 8 && DateTime.TryParseExact(
+                text, "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out var ymdText))
+            return ymdText;
         if (DateTime.TryParse(text, out var parsed))
             return parsed;
         return null;

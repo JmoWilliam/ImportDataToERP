@@ -71,4 +71,25 @@ public class AccountController : Controller
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         return RedirectToAction("Login", "Account");
     }
+
+    [HttpPost]
+    [Authorize]
+    public IActionResult SelectCompany(string? database, string? companyName, string? returnUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(database))
+        {
+            HttpContext.Session.SetString(ErpConnectionAccessor.SessionKey, database);
+            HttpContext.Session.SetString(ErpConnectionAccessor.SessionCompanyNameKey, companyName ?? "");
+        }
+        else
+        {
+            HttpContext.Session.Remove(ErpConnectionAccessor.SessionKey);
+            HttpContext.Session.Remove(ErpConnectionAccessor.SessionCompanyNameKey);
+        }
+
+        if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+            return Redirect(returnUrl);
+
+        return RedirectToAction("Index", "Home");
+    }
 }

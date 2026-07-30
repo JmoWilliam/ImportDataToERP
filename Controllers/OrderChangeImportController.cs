@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Json;
 using ImportDataToERP.Models;
 using ImportDataToERP.Services;
@@ -100,7 +101,8 @@ public class OrderChangeImportController : Controller
     [HttpPost]
     public async Task<IActionResult> TransferToErp(int id)
     {
-        var result = await _service.TransferToErpAsync(id);
+        var operatorAccount = User.FindFirstValue(ClaimTypes.GivenName) ?? User.Identity?.Name ?? "WEB";
+        var result = await _service.TransferToErpAsync(id, operatorAccount);
 
         if (result.StartsWith("OK|"))
         {
@@ -148,7 +150,7 @@ public class OrderChangeImportController : Controller
         try
         {
             await _service.UpdateDetailAsync(detail);
-            return Json(new { success = true });
+            return Json(new { success = true, detail });
         }
         catch (InvalidOperationException ex)
         {
@@ -258,7 +260,7 @@ public class OrderChangeImportController : Controller
         var bytes = _service.GenerateTemplateExcel();
         return File(bytes,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "匯入格式_訂單變更.xlsx");
+            "匯入格式_訂單交期變更.xlsx");
     }
 
     [HttpGet]

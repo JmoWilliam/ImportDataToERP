@@ -1,6 +1,6 @@
 @model ImportDataToERP.Models.OrderChangeHeader
 @{
-    ViewData["Title"] = Model.Id == 0 ? "新增訂單變更" : $"編輯訂單變更 - {Model.ImportBatchNo}";
+    ViewData["Title"] = Model.Id == 0 ? "新增訂單交期變更" : $"編輯訂單交期變更 - {Model.ImportBatchNo}";
     var details = ViewBag.Details as IEnumerable<ImportDataToERP.Models.OrderChangeDetail> ?? new List<OrderChangeDetail>();
     var detailList = details.ToList();
 }
@@ -10,7 +10,7 @@
     <div class="flex flex-wrap justify-between items-center gap-3 mb-6">
         <div>
             <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                @(Model.Id == 0 ? "🔄 新增訂單變更" : "🔄 編輯訂單變更")
+                @(Model.Id == 0 ? "🔄 新增訂單交期變更" : "🔄 編輯訂單交期變更")
             </h2>
             @if (Model.Id > 0)
             {
@@ -48,12 +48,12 @@
         </div>
     }
 
-    <!-- ========== 單頭變更區 ========== -->
+    <!-- ========== 單頭 (原訂單識別) ========== -->
     <div class="section-card bg-gradient-to-br from-blue-50/40 to-white">
         <div class="flex justify-between items-center mb-4">
             <div class="section-title" style="margin-bottom:0">
                 <span class="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center text-sm">H</span>
-                單頭資料
+                原訂單資料
             </div>
             @if (Model.Id > 0 && Model.TransferStatus != 2)
             {
@@ -68,74 +68,18 @@
         <form method="post" asp-action="@(Model.Id == 0 ? "Create" : "Edit")" asp-controller="OrderChangeImport" asp-route-id="@Model.Id">
             <input type="hidden" asp-for="Id" />
             <fieldset disabled="@(Model.TransferStatus == 2)">
-
-            <!-- Row 1: SoErpPrefix (readonly), SoErpNo (readonly), DocDate + ClosureStatus -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">原訂單單別</label>
-                    <input asp-for="SoErpPrefix" class="input-modern w-full bg-gray-50" placeholder="例: 220" readonly="@(Model.Id > 0)" />
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">原訂單單號</label>
-                    <input asp-for="SoErpNo" class="input-modern w-full bg-gray-50" placeholder="原訂單號" readonly="@(Model.Id > 0)" />
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-gray-600 mb-1.5 flex items-center justify-between">
-                        <span>單據日期</span>
-                        <label class="inline-flex items-center gap-1 cursor-pointer select-none">
-                            <input type="checkbox" id="cbxClosureStatus" name="ClosureStatusCheck" value="Y" class="w-3.5 h-3.5 text-blue-600 rounded" @(Model.ClosureStatus == "Y" ? "checked" : "") onchange="document.getElementById('ClosureStatus').value = this.checked ? 'Y' : 'N'" />
-                            <span class="text-xs text-gray-500">整張結案</span>
-                        </label>
-                    </label>
-                    <input asp-for="ClosureStatus" type="hidden" />
-                    <input asp-for="DocDate" type="date" value="@(Model.DocDate?.ToString("yyyy-MM-dd"))" class="input-modern w-full" />
-                </div>
-            </div>
-
-            <!-- Row 2: CustomerPurchaseOrder, CustomerCode+CustomerName -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">客戶採購單</label>
-                    <input asp-for="CustomerPurchaseOrder" class="input-modern w-full" placeholder="客戶採購單號" maxlength="20" />
-                </div>
-                <div class="grid grid-cols-2 gap-2">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                     <div>
-                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">客戶代號 <span class="text-red-400">*</span></label>
-                        <input asp-for="CustomerCode" required class="input-modern w-full" placeholder="例: EC_KS" />
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">原訂單單別 <span class="text-red-400">*</span></label>
+                        <input asp-for="SoErpPrefix" required class="input-modern w-full" placeholder="例: 220" />
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">客戶名稱</label>
-                        <input asp-for="CustomerName" class="input-modern w-full" placeholder="客戶名稱" />
+                        <label class="block text-xs font-semibold text-gray-600 mb-1.5">原訂單單號 <span class="text-red-400">*</span></label>
+                        <input asp-for="SoErpNo" required class="input-modern w-full" placeholder="例: 20251201001" />
                     </div>
                 </div>
-            </div>
-
-            <!-- Row 3: DepartmentId, SalesRep -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">部門代號</label>
-                    <input asp-for="DepartmentId" class="input-modern w-full" placeholder="例: 6100" />
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">業務人員</label>
-                    <input asp-for="SalesRep" class="input-modern w-full" placeholder="例: E13015" />
-                </div>
-            </div>
-
-            <!-- Row 4: Remarks -->
-            <div class="mb-4">
-                <label class="block text-xs font-semibold text-gray-600 mb-1.5">備註</label>
-                <textarea asp-for="Remarks" class="input-modern w-full" rows="2" placeholder="請輸入備註" maxlength="255"></textarea>
-            </div>
-
-            <!-- Row 5: ChangeReason -->
-            <div class="mb-4">
-                <label class="block text-xs font-semibold text-gray-600 mb-1.5">變更原因</label>
-                <textarea asp-for="ChangeReason" class="input-modern w-full" rows="2" placeholder="請輸入變更原因" maxlength="255"></textarea>
-            </div>
-
             </fieldset>
-            <div class="flex gap-3 mt-5">
+            <div class="mt-5 flex gap-3">
                 @if (Model.TransferStatus != 2)
                 {
                     <button type="submit" class="btn inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium">
@@ -151,159 +95,14 @@
         </form>
     </div>
 
-    <!-- ========== 客戶基本資料 (Collapsible) ========== -->
-    @if (Model.Id > 0)
-    {
-        <details class="mb-4" id="customerBasicSection">
-            <summary class="cursor-pointer text-sm font-semibold text-gray-700 hover:text-blue-600 py-2">
-                📋 客戶基本資料
-            </summary>
-            <div class="section-card mt-2">
-                <form id="customerBasicForm" method="post" asp-action="@(Model.Id == 0 ? "Create" : "Edit")" asp-controller="OrderChangeImport" asp-route-id="@Model.Id">
-                    <input type="hidden" asp-for="Id" />
-                    <fieldset disabled="@(Model.TransferStatus == 2)">
-
-                    <!-- Row 1: CustomerAddressFirst, CustomerAddressSecond -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">客戶聯絡地址(一) <span class="text-red-400">*</span></label>
-                            <input asp-for="CustomerAddressFirst" class="input-modern w-full" placeholder="請輸入客戶聯絡地址(一)" maxlength="200" />
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">客戶聯絡地址(二)</label>
-                            <input asp-for="CustomerAddressSecond" class="input-modern w-full" placeholder="請輸入客戶聯絡地址(二)" maxlength="200" />
-                        </div>
-                    </div>
-
-                    <!-- Row 2: Currency + ExchangeRate -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">交易幣別 <span class="text-red-400">*</span></label>
-                            <select asp-for="Currency" class="input-modern w-full">
-                                <option value="NTD">NTD 台幣</option>
-                                <option value="USD">USD 美金</option>
-                                <option value="HKD">HKD 港幣</option>
-                                <option value="RMB">RMB 人民幣</option>
-                                <option value="JPY">JPY 日圓</option>
-                                <option value="EUR">EUR 歐元</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">匯率 <span class="text-red-400">*</span></label>
-                            <input asp-for="ExchangeRate" type="number" step="0.0001" class="input-modern w-full" placeholder="請輸入匯率" />
-                        </div>
-                    </div>
-
-                    <!-- Row 3: TradeTerm, TaxNo+Taxation+BusinessTaxRate -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">交易條件</label>
-                            <input asp-for="TradeTerm" class="input-modern w-full" placeholder="1.FOB 2.CIF ..." />
-                        </div>
-                        <div class="grid grid-cols-3 gap-2">
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-600 mb-1.5">稅別碼</label>
-                                <input asp-for="TaxNo" class="input-modern w-full" placeholder="稅別碼" />
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-600 mb-1.5">課稅別</label>
-                                <select asp-for="Taxation" class="input-modern w-full">
-                                    <option value="">—</option>
-                                    <option value="1">1.內含</option>
-                                    <option value="2">2.外加</option>
-                                    <option value="3">3.零稅率</option>
-                                    <option value="4">4.免稅</option>
-                                    <option value="9">9.不計稅</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-600 mb-1.5">營業稅率</label>
-                                <input asp-for="BusinessTaxRate" type="number" step="0.01" class="input-modern w-full bg-gray-50" placeholder="稅率" readonly />
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Row 4: PaymentTerm, PriceTerm -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">付款條件</label>
-                            <input asp-for="PaymentTerm" class="input-modern w-full" placeholder="付款條件" />
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">價格條件</label>
-                            <input asp-for="PriceTerm" class="input-modern w-full" placeholder="請輸入價格條件" maxlength="40" />
-                        </div>
-                    </div>
-
-                    <!-- Row 5: DepositPartial (Y/N radio), DepositRate -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">訂金分批</label>
-                            <div class="flex items-center gap-4 pt-1">
-                                <label class="inline-flex items-center gap-1.5 cursor-pointer">
-                                    <input type="radio" name="DepositPartial" value="Y" class="w-3.5 h-3.5" @(Model.DepositPartial == "Y" ? "checked" : "") id="depositPartialY" />
-                                    <span class="text-sm">是</span>
-                                </label>
-                                <label class="inline-flex items-center gap-1.5 cursor-pointer">
-                                    <input type="radio" name="DepositPartial" value="N" class="w-3.5 h-3.5" @(Model.DepositPartial != "Y" ? "checked" : "") id="depositPartialN" />
-                                    <span class="text-sm">否</span>
-                                </label>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">訂金比率</label>
-                            <input asp-for="DepositRate" type="number" step="0.01" class="input-modern w-full" placeholder="請輸入訂金比率" />
-                        </div>
-                    </div>
-
-                    <!-- Row 6: DetailMultiTax (Y/N radio), ShipMethod -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">單身多稅率</label>
-                            <div class="flex items-center gap-4 pt-1">
-                                <label class="inline-flex items-center gap-1.5 cursor-pointer">
-                                    <input type="radio" name="DetailMultiTax" value="Y" class="w-3.5 h-3.5" @(Model.DetailMultiTax == "Y" ? "checked" : "") id="detailMultiTaxY" />
-                                    <span class="text-sm">是</span>
-                                </label>
-                                <label class="inline-flex items-center gap-1.5 cursor-pointer">
-                                    <input type="radio" name="DetailMultiTax" value="N" class="w-3.5 h-3.5" @(Model.DetailMultiTax != "Y" ? "checked" : "") id="detailMultiTaxN" />
-                                    <span class="text-sm">否</span>
-                                </label>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-gray-600 mb-1.5">運輸方式</label>
-                            <input asp-for="ShipMethod" class="input-modern w-full" placeholder="1.空運 2.海運 ..." />
-                        </div>
-                    </div>
-
-                    </fieldset>
-                    <div class="flex gap-3">
-                        @if (Model.TransferStatus != 2)
-                        {
-                            <button type="submit" form="customerBasicForm" class="btn inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
-                                儲存客戶基本資料
-                            </button>
-                        }
-                        else
-                        {
-                            <span class="text-sm text-gray-400">🔒 已拋轉ERP，無法再編輯</span>
-                        }
-                    </div>
-                </form>
-            </div>
-        </details>
-    }
-
-    <!-- ========== 單身明細區 ========== -->
+    <!-- ========== 交期變更明細 ========== -->
     @if (Model.Id > 0)
     {
         <div class="section-card">
             <div class="flex justify-between items-center mb-4">
                 <div class="section-title" style="margin-bottom:0">
                     <span class="w-7 h-7 rounded-lg bg-green-600 text-white flex items-center justify-center text-sm">D</span>
-                    變更明細
+                    交期變更明細
                     <span class="text-sm text-gray-400 font-normal" id="detailCount">(@detailList.Count 筆)</span>
                 </div>
                 @if (Model.TransferStatus != 2)
@@ -314,6 +113,8 @@
                     </button>
                 }
             </div>
+
+            <p class="text-xs text-gray-400 mb-3">💡 品號/品名/庫別/數量/單位/單價/原交期 皆依「序號」向 ERP 原訂單查詢帶出，僅「新交期」需要輸入</p>
 
             @if (detailList.Count == 0)
             {
@@ -333,12 +134,13 @@
                 <table class="min-w-full" id="detailTable">
                     <thead class="bg-gray-50/80 sticky top-0 z-10 backdrop-blur">
                         <tr>
+                            <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 w-16">序號</th>
                             <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">品號</th>
                             <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">品名</th>
-                            <th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">原數量</th>
-                            <th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">新數量</th>
-                            <th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">原單價</th>
-                            <th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">新單價</th>
+                            <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 w-16">庫別</th>
+                            <th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-20">數量</th>
+                            <th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-14">單位</th>
+                            <th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-20">單價</th>
                             <th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">原交期</th>
                             <th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">新交期</th>
                             <th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">操作</th>
@@ -348,24 +150,23 @@
                         @foreach (var d in detailList)
                         {
                             <tr id="row-@d.Id" class="detail-row hover:bg-blue-50/30 transition">
-                                <!-- Read mode -->
-                                <td class="px-3 py-2 view-mode font-mono text-xs text-gray-700">@d.ProductCode</td>
-                                <td class="px-3 py-2 view-mode text-sm">@d.ProductName</td>
-                                <td class="px-3 py-2 view-mode text-sm text-right">@d.OriginalQuantity?.ToString("N2")</td>
-                                <td class="px-3 py-2 view-mode text-sm text-right font-medium @(d.NewQuantity != d.OriginalQuantity ? "text-orange-600" : "")">@d.NewQuantity?.ToString("N2")</td>
-                                <td class="px-3 py-2 view-mode text-sm text-right">@d.OriginalUnitPrice?.ToString("N2")</td>
-                                <td class="px-3 py-2 view-mode text-sm text-right font-medium @(d.NewUnitPrice != d.OriginalUnitPrice ? "text-orange-600" : "")">@d.NewUnitPrice?.ToString("N2")</td>
-                                <td class="px-3 py-2 view-mode text-sm text-center">@d.OriginalDeliveryDate?.ToString("yyyy-MM-dd")</td>
-                                <td class="px-3 py-2 view-mode text-sm text-center font-medium @(d.NewDeliveryDate != d.OriginalDeliveryDate ? "text-orange-600" : "")">@d.NewDeliveryDate?.ToString("yyyy-MM-dd")</td>
+                                <!-- 序號 (可編輯) -->
+                                <td class="px-3 py-2 view-mode text-sm font-mono">@d.SeqNo</td>
+                                <td class="px-3 py-2 edit-mode hidden"><input class="w-14 input-modern text-xs py-1 font-mono" value="@d.SeqNo" data-field="SeqNo" /></td>
 
-                                <!-- Edit mode -->
-                                <td class="px-3 py-2 edit-mode hidden"><input class="w-24 input-modern text-xs py-1 font-mono" value="@d.ProductCode" data-field="ProductCode" /></td>
-                                <td class="px-3 py-2 edit-mode hidden"><input class="w-28 input-modern text-xs py-1" value="@d.ProductName" data-field="ProductName" /></td>
-                                <td class="px-3 py-2 edit-mode hidden"><input class="w-20 input-modern text-xs py-1 text-right" value="@d.OriginalQuantity" data-field="OriginalQuantity" type="number" step="any" /></td>
-                                <td class="px-3 py-2 edit-mode hidden"><input class="w-20 input-modern text-xs py-1 text-right" value="@d.NewQuantity" data-field="NewQuantity" type="number" step="any" /></td>
-                                <td class="px-3 py-2 edit-mode hidden"><input class="w-20 input-modern text-xs py-1 text-right" value="@d.OriginalUnitPrice" data-field="OriginalUnitPrice" type="number" step="any" /></td>
-                                <td class="px-3 py-2 edit-mode hidden"><input class="w-20 input-modern text-xs py-1 text-right" value="@d.NewUnitPrice" data-field="NewUnitPrice" type="number" step="any" /></td>
-                                <td class="px-3 py-2 edit-mode hidden"><input class="w-28 input-modern text-xs py-1 text-center" value="@d.OriginalDeliveryDate?.ToString("yyyy-MM-dd")" data-field="OriginalDeliveryDate" type="date" /></td>
+                                <!-- 品號/品名/庫別/數量/單位/單價/原交期：唯讀顯示(查ERP帶出) -->
+                                <td class="px-3 py-2 font-mono text-xs text-gray-700 lookup-productcode">
+                                    @(string.IsNullOrEmpty(d.ProductCode) ? "—" : d.ProductCode)
+                                </td>
+                                <td class="px-3 py-2 text-sm lookup-productname">@d.ProductName</td>
+                                <td class="px-3 py-2 text-xs text-gray-500 lookup-warehouse">@d.Warehouse</td>
+                                <td class="px-3 py-2 text-sm text-right lookup-quantity">@d.Quantity?.ToString("N2")</td>
+                                <td class="px-3 py-2 text-sm text-center lookup-unit">@d.Unit</td>
+                                <td class="px-3 py-2 text-sm text-right lookup-unitprice">@d.UnitPrice?.ToString("N2")</td>
+                                <td class="px-3 py-2 text-sm text-center lookup-originaldate">@d.OriginalDeliveryDate?.ToString("yyyy-MM-dd")</td>
+
+                                <!-- 新交期 (可編輯) -->
+                                <td class="px-3 py-2 view-mode text-sm text-center font-medium text-orange-600">@d.NewDeliveryDate?.ToString("yyyy-MM-dd")</td>
                                 <td class="px-3 py-2 edit-mode hidden"><input class="w-28 input-modern text-xs py-1 text-center" value="@d.NewDeliveryDate?.ToString("yyyy-MM-dd")" data-field="NewDeliveryDate" type="date" /></td>
 
                                 <!-- Actions -->
@@ -404,37 +205,29 @@
 <script>
 const headerId = @Model.Id;
 
-// ── 表格範本 (空狀態 → 表格轉換用) ──
 function ensureTable() {
-    if (document.getElementById('detailTable')) return;
-    const emptyEl = document.getElementById('emptyDetailState');
-    if (emptyEl) emptyEl.style.display = 'none';
-    const container = document.createElement('div');
-    container.className = 'overflow-x-auto max-h-[55vh] overflow-y-auto rounded-xl border border-gray-200';
-    container.id = 'detailTableContainer';
-    container.innerHTML =
-        '<table class="min-w-full" id="detailTable">' +
-        '<thead class="bg-gray-50/80 sticky top-0 z-10 backdrop-blur">' +
-        '<tr>' +
-        '<th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">品號</th>' +
-        '<th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">品名</th>' +
-        '<th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">原數量</th>' +
-        '<th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">新數量</th>' +
-        '<th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">原單價</th>' +
-        '<th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">新單價</th>' +
-        '<th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">原交期</th>' +
-        '<th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">新交期</th>' +
-        '<th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">操作</th>' +
-        '</tr></thead>' +
-        '<tbody class="divide-y divide-gray-50 bg-white"></tbody>' +
-        '</table>';
-    if (emptyEl) {
-        emptyEl.parentNode.insertBefore(container, emptyEl.nextSibling);
-    } else {
-        // fallback: 直接插入頁面
-        const section = document.querySelector('.section-card');
-        if (section) section.appendChild(container);
+    const emptyState = document.getElementById('emptyDetailState');
+    if (emptyState) {
+        emptyState.outerHTML = '<div class="overflow-x-auto max-h-[55vh] overflow-y-auto rounded-xl border border-gray-200" id="detailTableContainer">' +
+            '<table class="min-w-full" id="detailTable">' +
+            '<thead class="bg-gray-50/80 sticky top-0 z-10 backdrop-blur"><tr>' +
+            '<th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 w-16">序號</th>' +
+            '<th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">品號</th>' +
+            '<th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">品名</th>' +
+            '<th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 w-16">庫別</th>' +
+            '<th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-20">數量</th>' +
+            '<th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-14">單位</th>' +
+            '<th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-20">單價</th>' +
+            '<th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">原交期</th>' +
+            '<th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">新交期</th>' +
+            '<th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">操作</th>' +
+            '</tr></thead><tbody class="divide-y divide-gray-50 bg-white"></tbody></table></div>';
     }
+}
+
+// ── 伺服器回傳的 DateTime 為 ISO 字串(可能含時間)，取前 10 碼轉成 yyyy-MM-dd ──
+function fmtDate(s) {
+    return s ? String(s).substring(0, 10) : '';
 }
 
 // ── 建構新明細列 (edit 模式) ──
@@ -442,22 +235,17 @@ function buildNewRowHtml(detail) {
     const id = detail.id;
     const v = (s) => (s || '');
     return '<tr id="row-' + id + '" class="detail-row hover:bg-blue-50/30 bg-blue-50/50">' +
-        '<td class="px-3 py-2 view-mode hidden font-mono text-xs text-gray-700">' + v(detail.productCode) + '</td>' +
-        '<td class="px-3 py-2 view-mode hidden text-sm">' + v(detail.productName) + '</td>' +
-        '<td class="px-3 py-2 view-mode hidden text-sm text-right">' + (detail.originalQuantity != null ? Number(detail.originalQuantity).toLocaleString(undefined,{minimumFractionDigits:2}) : '') + '</td>' +
-        '<td class="px-3 py-2 view-mode hidden text-sm text-right font-medium">' + (detail.newQuantity != null ? Number(detail.newQuantity).toLocaleString(undefined,{minimumFractionDigits:2}) : '') + '</td>' +
-        '<td class="px-3 py-2 view-mode hidden text-sm text-right">' + (detail.originalUnitPrice != null ? Number(detail.originalUnitPrice).toLocaleString(undefined,{minimumFractionDigits:2}) : '') + '</td>' +
-        '<td class="px-3 py-2 view-mode hidden text-sm text-right font-medium">' + (detail.newUnitPrice != null ? Number(detail.newUnitPrice).toLocaleString(undefined,{minimumFractionDigits:2}) : '') + '</td>' +
-        '<td class="px-3 py-2 view-mode hidden text-sm text-center">' + v(detail.originalDeliveryDate) + '</td>' +
-        '<td class="px-3 py-2 view-mode hidden text-sm text-center font-medium">' + v(detail.newDeliveryDate) + '</td>' +
-        '<td class="px-3 py-2 edit-mode"><input class="w-24 input-modern text-xs py-1 font-mono" value="' + v(detail.productCode) + '" data-field="ProductCode" /></td>' +
-        '<td class="px-3 py-2 edit-mode"><input class="w-28 input-modern text-xs py-1" value="' + v(detail.productName) + '" data-field="ProductName" /></td>' +
-        '<td class="px-3 py-2 edit-mode"><input class="w-20 input-modern text-xs py-1 text-right" value="' + v(detail.originalQuantity) + '" data-field="OriginalQuantity" type="number" step="any" /></td>' +
-        '<td class="px-3 py-2 edit-mode"><input class="w-20 input-modern text-xs py-1 text-right" value="' + v(detail.newQuantity) + '" data-field="NewQuantity" type="number" step="any" /></td>' +
-        '<td class="px-3 py-2 edit-mode"><input class="w-20 input-modern text-xs py-1 text-right" value="' + v(detail.originalUnitPrice) + '" data-field="OriginalUnitPrice" type="number" step="any" /></td>' +
-        '<td class="px-3 py-2 edit-mode"><input class="w-20 input-modern text-xs py-1 text-right" value="' + v(detail.newUnitPrice) + '" data-field="NewUnitPrice" type="number" step="any" /></td>' +
-        '<td class="px-3 py-2 edit-mode"><input class="w-28 input-modern text-xs py-1 text-center" value="' + v(detail.originalDeliveryDate) + '" data-field="OriginalDeliveryDate" type="date" /></td>' +
-        '<td class="px-3 py-2 edit-mode"><input class="w-28 input-modern text-xs py-1 text-center" value="' + v(detail.newDeliveryDate) + '" data-field="NewDeliveryDate" type="date" /></td>' +
+        '<td class="px-3 py-2 view-mode hidden text-sm font-mono">' + v(detail.seqNo) + '</td>' +
+        '<td class="px-3 py-2 edit-mode"><input class="w-14 input-modern text-xs py-1 font-mono" value="' + v(detail.seqNo) + '" data-field="SeqNo" /></td>' +
+        '<td class="px-3 py-2 font-mono text-xs text-gray-700 lookup-productcode">' + (v(detail.productCode) || '—') + '</td>' +
+        '<td class="px-3 py-2 text-sm lookup-productname">' + v(detail.productName) + '</td>' +
+        '<td class="px-3 py-2 text-xs text-gray-500 lookup-warehouse">' + v(detail.warehouse) + '</td>' +
+        '<td class="px-3 py-2 text-sm text-right lookup-quantity">' + (detail.quantity != null ? Number(detail.quantity).toLocaleString(undefined,{minimumFractionDigits:2}) : '') + '</td>' +
+        '<td class="px-3 py-2 text-sm text-center lookup-unit">' + v(detail.unit) + '</td>' +
+        '<td class="px-3 py-2 text-sm text-right lookup-unitprice">' + (detail.unitPrice != null ? Number(detail.unitPrice).toLocaleString(undefined,{minimumFractionDigits:2}) : '') + '</td>' +
+        '<td class="px-3 py-2 text-sm text-center lookup-originaldate">' + fmtDate(detail.originalDeliveryDate) + '</td>' +
+        '<td class="px-3 py-2 view-mode hidden text-sm text-center font-medium text-orange-600">' + fmtDate(detail.newDeliveryDate) + '</td>' +
+        '<td class="px-3 py-2 edit-mode"><input class="w-28 input-modern text-xs py-1 text-center" value="' + fmtDate(detail.newDeliveryDate) + '" data-field="NewDeliveryDate" type="date" /></td>' +
         '<td class="px-3 py-2 text-center whitespace-nowrap">' +
         '<span class="view-mode hidden flex items-center justify-center gap-1.5">' +
         '<button onclick="editRow(' + id + ')" class="btn px-2 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100">編輯</button>' +
@@ -471,14 +259,23 @@ function buildNewRowHtml(detail) {
         '</tr>';
 }
 
+// ── 更新單一列的唯讀查詢欄位 (儲存後刷新品號/品名/庫別/數量/單位/單價/原交期) ──
+function updateLookupCells(row, detail) {
+    const v = (s) => (s || '');
+    row.querySelector('.lookup-productcode').textContent = v(detail.productCode) || '—';
+    row.querySelector('.lookup-productname').textContent = v(detail.productName);
+    row.querySelector('.lookup-warehouse').textContent = v(detail.warehouse);
+    row.querySelector('.lookup-quantity').textContent = detail.quantity != null ? Number(detail.quantity).toLocaleString(undefined,{minimumFractionDigits:2}) : '';
+    row.querySelector('.lookup-unit').textContent = v(detail.unit);
+    row.querySelector('.lookup-unitprice').textContent = detail.unitPrice != null ? Number(detail.unitPrice).toLocaleString(undefined,{minimumFractionDigits:2}) : '';
+    row.querySelector('.lookup-originaldate').textContent = fmtDate(detail.originalDeliveryDate);
+}
+
 // ── 新增明細：直接建立並進入編輯模式 (一鍵到位) ──
 async function addNewRow() {
     const data = {
         headerId: headerId,
-        productCode: '', productName: '',
-        originalQuantity: null, newQuantity: null,
-        originalUnitPrice: null, newUnitPrice: null,
-        originalDeliveryDate: null, newDeliveryDate: null
+        seqNo: '', newDeliveryDate: null
     };
     try {
         const resp = await fetch('/OrderChangeImport/CreateDetail', {
@@ -498,9 +295,8 @@ async function addNewRow() {
         const tbody = document.querySelector('#detailTable tbody');
         tbody.insertAdjacentHTML('beforeend', buildNewRowHtml(detail));
 
-        // Focus 第一格
         const newRow = document.getElementById('row-' + detail.id);
-        const firstInput = newRow.querySelector('input[data-field="ProductCode"]');
+        const firstInput = newRow.querySelector('input[data-field="SeqNo"]');
         if (firstInput) firstInput.focus();
 
         updateDetailCount();
@@ -541,10 +337,8 @@ async function saveRow(id) {
     const data = { id: id, headerId: headerId };
     row.querySelectorAll('[data-field]').forEach(input => {
         let val = input.value;
-        if (input.type === 'number') val = val ? parseFloat(val) : null;
         if (input.type === 'date') val = val || null;
-        const field = input.dataset.field.charAt(0).toLowerCase() + input.dataset.field.slice(1);
-        data[field] = val;
+        data[input.dataset.field] = val;
     });
 
     try {
@@ -559,21 +353,12 @@ async function saveRow(id) {
             alert(respJson.message || '儲存失敗');
             return;
         }
+        const detail = respJson.detail;
 
         const cells = row.querySelectorAll('.view-mode');
-        cells[0].textContent = data.productCode || '';
-        cells[1].textContent = data.productName || '';
-        cells[2].textContent = data.originalQuantity != null ? Number(data.originalQuantity).toLocaleString(undefined, {minimumFractionDigits:2}) : '';
-        cells[3].textContent = data.newQuantity != null ? Number(data.newQuantity).toLocaleString(undefined, {minimumFractionDigits:2}) : '';
-        cells[4].textContent = data.originalUnitPrice != null ? Number(data.originalUnitPrice).toLocaleString(undefined, {minimumFractionDigits:2}) : '';
-        cells[5].textContent = data.newUnitPrice != null ? Number(data.newUnitPrice).toLocaleString(undefined, {minimumFractionDigits:2}) : '';
-        cells[6].textContent = data.originalDeliveryDate || '';
-        cells[7].textContent = data.newDeliveryDate || '';
-
-        // Refresh highlight on changed values
-        if (data.newQuantity != data.originalQuantity) cells[3].classList.add('text-orange-600'); else cells[3].classList.remove('text-orange-600');
-        if (data.newUnitPrice != data.originalUnitPrice) cells[5].classList.add('text-orange-600'); else cells[5].classList.remove('text-orange-600');
-        if (data.newDeliveryDate != data.originalDeliveryDate) cells[7].classList.add('text-orange-600'); else cells[7].classList.remove('text-orange-600');
+        cells[0].textContent = data.SeqNo || '';
+        cells[1].textContent = data.NewDeliveryDate || '';
+        updateLookupCells(row, detail);
 
         // 首次儲存後，取消按鈕改回標準 cancelRow
         const cancelBtn = row.querySelector('.edit-mode button[onclick*="cancelNewRow"]');
@@ -616,7 +401,7 @@ function updateDetailCount() {
     const el = document.getElementById('detailCount');
     if (el) {
         const count = document.querySelectorAll('.detail-row').length;
-        el.textContent = '(' + count + ' \u7B46)';
+        el.textContent = '(' + count + ' 筆)';
     }
 }
 </script>
