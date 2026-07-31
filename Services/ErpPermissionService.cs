@@ -4,21 +4,20 @@ using Microsoft.Data.SqlClient;
 namespace ImportDataToERP.Services;
 
 /// <summary>
-/// 依登入帳號查詢 ERP 登錄庫 (DSCSYS.dbo.ADMMF/ADMMG) 是否具備指定功能權限
+/// 依登入帳號查詢目前選定公司別的 ERP 資料庫 (ADMMF/ADMMG) 是否具備指定功能權限
 /// </summary>
 public class ErpPermissionService
 {
-    private readonly string _erpConnectionString;
+    private readonly ErpConnectionAccessor _erpConnectionAccessor;
 
-    public ErpPermissionService(string erpConnectionString)
+    public ErpPermissionService(ErpConnectionAccessor erpConnectionAccessor)
     {
-        _erpConnectionString = erpConnectionString;
+        _erpConnectionAccessor = erpConnectionAccessor;
     }
 
     public async Task<bool> HasPermissionAsync(string account, string functionCode)
     {
-        var sysConnStr = ErpConnectionAccessor.BuildConnectionStringForDatabase(_erpConnectionString, "DSCSYS");
-        using var conn = new SqlConnection(sysConnStr);
+        using var conn = new SqlConnection(_erpConnectionAccessor.GetConnectionString());
         var count = await conn.ExecuteScalarAsync<int>(
             @"SELECT COUNT(1)
               FROM ADMMF a
