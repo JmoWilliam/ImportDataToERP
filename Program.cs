@@ -41,12 +41,13 @@ var erpConnectionString = builder.Configuration.GetConnectionString("ErpConnecti
 // 註冊 Services
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<ErpCompanyService>(sp => new ErpCompanyService(erpConnectionString));
+builder.Services.AddScoped<ErpPermissionService>(sp => new ErpPermissionService(erpConnectionString));
 builder.Services.AddScoped<ErpConnectionAccessor>(sp =>
     new ErpConnectionAccessor(erpConnectionString, sp.GetRequiredService<IHttpContextAccessor>()));
 builder.Services.AddScoped<OrderImportService>(sp =>
-    new OrderImportService(sp.GetRequiredService<DbConnectionFactory>(), sp.GetRequiredService<ErpConnectionAccessor>()));
+    new OrderImportService(sp.GetRequiredService<DbConnectionFactory>(), sp.GetRequiredService<ErpConnectionAccessor>(), sp.GetRequiredService<ErpPermissionService>()));
 builder.Services.AddScoped<OrderChangeImportService>(sp =>
-    new OrderChangeImportService(sp.GetRequiredService<DbConnectionFactory>(), sp.GetRequiredService<ErpConnectionAccessor>()));
+    new OrderChangeImportService(sp.GetRequiredService<DbConnectionFactory>(), sp.GetRequiredService<ErpConnectionAccessor>(), sp.GetRequiredService<ErpPermissionService>()));
 
 var app = builder.Build();
 

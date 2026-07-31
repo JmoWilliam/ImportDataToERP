@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Json;
 using ImportDataToERP.Models;
 using ImportDataToERP.Services;
@@ -84,7 +85,8 @@ public class OrderImportController : Controller
     [HttpPost]
     public async Task<IActionResult> TransferToErp(int id)
     {
-        var result = await _service.TransferToErpAsync(id);
+        var operatorAccount = User.FindFirstValue(ClaimTypes.GivenName) ?? User.Identity?.Name ?? "WEB";
+        var result = await _service.TransferToErpAsync(id, operatorAccount);
 
         if (result.StartsWith("OK|"))
         {

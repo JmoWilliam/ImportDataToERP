@@ -12,11 +12,13 @@ public class OrderImportService
 {
     private readonly DbConnectionFactory _db;
     private readonly ErpConnectionAccessor _erpConnectionAccessor;
+    private readonly ErpPermissionService _erpPermissionService;
 
-    public OrderImportService(DbConnectionFactory db, ErpConnectionAccessor erpConnectionAccessor)
+    public OrderImportService(DbConnectionFactory db, ErpConnectionAccessor erpConnectionAccessor, ErpPermissionService erpPermissionService)
     {
         _db = db;
         _erpConnectionAccessor = erpConnectionAccessor;
+        _erpPermissionService = erpPermissionService;
     }
 
     // ========== 查詢 ==========
@@ -422,7 +424,7 @@ public class OrderImportService
 
     // ========== 拋轉 ERP ==========
 
-    public async Task<string> TransferToErpAsync(int headerId)
+    public async Task<string> TransferToErpAsync(int headerId, string operatorAccount)
     {
         // 1. 讀取單頭+單身
         var header = await GetHeaderByIdAsync(headerId);
@@ -436,6 +438,9 @@ public class OrderImportService
 
         if (details.Any(d => string.IsNullOrWhiteSpace(d.ProductCode)))
             return "部分明細無品號，無法拋轉";
+
+        if (!await _erpPermissionService.HasPermissionAsync(operatorAccount, "COPI06"))
+            return "ERP帳號無訂單建立權限";
 
         var dateNow = DateTime.Now.ToString("yyyyMMdd");
         var erpPrefix = header.OrderType;

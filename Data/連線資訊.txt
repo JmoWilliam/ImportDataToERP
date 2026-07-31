@@ -6,3 +6,34 @@ DS密碼:0980586184
 
 SQL:192.168.1.17
 sa:a6+0168
+
+.\publish.ps1 -Zip
+
+部署到客戶端 Windows Server 2019 步驟：
+
+1. 把整個發佈資料夾複製到伺服器，例如 C:\ImportDataToERP
+   (裡面已包含 .NET Runtime，伺服器不需要另外安裝任何套件)
+
+2. 編輯 C:\ImportDataToERP\appsettings.json，
+   把 ConnectionStrings 改成客戶端實際的 SQL Server 連線資訊：
+     - DefaultConnection: 本機用的 ImportDataToERP 資料庫
+     - ErpConnection: 客戶端 ERP SQL Server (預設公司資料庫)
+
+3. 建立本機資料庫 (用 sqlcmd 依序執行 "DB Script" 資料夾內的腳本)：
+     sqlcmd -S <SQL主機> -U sa -P <密碼> -i "C:\ImportDataToERP\DB Script\database_init.sql"
+   之後把資料夾內其他 .sql 檔也依序執行過一次
+
+4. 用系統管理員 PowerShell 把它註冊成 Windows 服務 (開機自動啟動，不需要IIS)：
+     sc.exe create ImportDataToERP binPath= "D:\publish\ImportDataToERP.exe --urls http://0.0.0.0:8080" start= auto DisplayName= "ImportDataToERP"
+     sc.exe start ImportDataToERP
+
+   (port 8080 可自行更改，記得跟第5步防火牆規則對應)
+
+5. 開放防火牆對外的 port：
+     New-NetFirewallRule -DisplayName "ImportDataToERP" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
+
+6. 瀏覽器開 http://<伺服器IP>:8080 測試登入、公司別下拉選單、拋轉ERP功能
+
+移除服務 (如需要)：
+     sc.exe stop ImportDataToERP
+     sc.exe delete ImportDataToERP

@@ -12,11 +12,13 @@ public class OrderChangeImportService
 {
     private readonly DbConnectionFactory _db;
     private readonly ErpConnectionAccessor _erpConnectionAccessor;
+    private readonly ErpPermissionService _erpPermissionService;
 
-    public OrderChangeImportService(DbConnectionFactory db, ErpConnectionAccessor erpConnectionAccessor)
+    public OrderChangeImportService(DbConnectionFactory db, ErpConnectionAccessor erpConnectionAccessor, ErpPermissionService erpPermissionService)
     {
         _db = db;
         _erpConnectionAccessor = erpConnectionAccessor;
+        _erpPermissionService = erpPermissionService;
     }
 
     // ========== 查詢 ==========
@@ -382,6 +384,9 @@ public class OrderChangeImportService
         if (details.Any(d => string.IsNullOrWhiteSpace(d.ProductCode)))
             return "部分明細於ERP查無原始品號資料，無法拋轉";
 
+        if (!await _erpPermissionService.HasPermissionAsync(operatorAccount, "COPI07"))
+            return "ERP帳號無訂單變更權限";
+
         var dateNow = DateTime.Now.ToString("yyyyMMdd");
         var erpPrefix = header.SoErpPrefix;
         var erpNo = header.SoErpNo;
@@ -417,13 +422,14 @@ public class OrderChangeImportService
                     MODIFIER = "", MODI_DATE = "", FLAG = "1",
                     TE001 = erpPrefix, TE002 = erpNo, TE003 = changeVer,
                     TE004 = dateNow, TE005 = "N", TE006 = "交期變更",
+                    TE029 = "Y",
                 };
 
                 await erpConn.ExecuteAsync(@"
                     INSERT INTO COPTE (COMPANY, CREATOR, USR_GROUP, CREATE_DATE, MODIFIER, MODI_DATE, FLAG,
-                        TE001, TE002, TE003, TE004, TE005, TE006)
+                        TE001, TE002, TE003, TE004, TE005, TE006, TE029)
                     VALUES (@COMPANY, @CREATOR, @USR_GROUP, @CREATE_DATE, @MODIFIER, @MODI_DATE, @FLAG,
-                        @TE001, @TE002, @TE003, @TE004, @TE005, @TE006)", coptEParams);
+                        @TE001, @TE002, @TE003, @TE004, @TE005, @TE006, @TE029)", coptEParams);
 
                 // ========== 寫入 COPTF (訂單變更單身) ==========
                 // 新值區塊(TF)與原值區塊(TF1xx)：僅交期不同(TF015=新交期/TF115=原交期)，其餘品號/數量/單價維持不變
