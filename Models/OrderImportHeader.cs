@@ -45,6 +45,14 @@ public class OrderImportHeader
     [Display(Name = "課稅別")]
     public string? TaxType { get; set; }
 
+    /// <summary>付款條件名稱 (依客戶代號查 COPMA.MA031 帶出)</summary>
+    [Display(Name = "付款條件名稱")]
+    public string? PaymentTermName { get; set; }
+
+    /// <summary>付款條件代碼 (依客戶代號查 COPMA.MA083 帶出)</summary>
+    [Display(Name = "付款條件代碼")]
+    public string? PaymentTermCode { get; set; }
+
     [Display(Name = "明細筆數")]
     public int DetailCount { get; set; }
 
@@ -53,6 +61,10 @@ public class OrderImportHeader
 
     [Display(Name = "匯入時間")]
     public DateTime? ImportedAt { get; set; }
+
+    /// <summary>建立/匯入此單頭的登入帳號</summary>
+    [Display(Name = "匯入帳號")]
+    public string? CreatedByAccount { get; set; }
 
     /// <summary>拋轉ERP狀態: 1=未拋轉 2=已拋轉 3=拋轉失敗</summary>
     [Display(Name = "拋轉ERP狀態")]

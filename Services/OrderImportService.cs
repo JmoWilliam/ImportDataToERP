@@ -23,7 +23,8 @@ public class OrderImportService
 
     // ========== 查詢 ==========
 
-    public async Task<IEnumerable<OrderImportHeader>> GetAllHeadersAsync()
+    /// <summary>查詢單頭清單，僅回傳指定登入帳號建立/匯入的資料</summary>
+    public async Task<IEnumerable<OrderImportHeader>> GetHeadersByAccountAsync(string account)
     {
         using var conn = _db.CreateConnection();
         var sql = @"
@@ -34,8 +35,9 @@ public class OrderImportService
                 FROM OrderImportDetails
                 GROUP BY HeaderId
             ) d ON d.HeaderId = h.Id
+            WHERE h.CreatedByAccount = @Account
             ORDER BY h.Id DESC";
-        return await conn.QueryAsync<OrderImportHeader>(sql);
+        return await conn.QueryAsync<OrderImportHeader>(sql, new { Account = account });
     }
 
     public async Task<IEnumerable<OrderImportDetail>> GetDetailsByHeaderIdAsync(int headerId)
@@ -67,14 +69,14 @@ public class OrderImportService
             header.CreatedAt = DateTime.Now;
 
             var sql = @"
-                INSERT INTO OrderImportHeaders 
+                INSERT INTO OrderImportHeaders
                     (ImportBatchNo, OrderType, OrderNo, CustomerCode, DeptCode, Remarks,
-                     OrderDate, SalesRep, FactoryCode, DocDate, TaxType,
-                     ImportStatus, ImportedAt, CreatedAt)
-                VALUES 
+                     OrderDate, SalesRep, FactoryCode, DocDate, TaxType, PaymentTermName, PaymentTermCode,
+                     ImportStatus, ImportedAt, CreatedByAccount, CreatedAt)
+                VALUES
                     (@ImportBatchNo, @OrderType, @OrderNo, @CustomerCode, @DeptCode, @Remarks,
-                     @OrderDate, @SalesRep, @FactoryCode, @DocDate, @TaxType,
-                     @ImportStatus, @ImportedAt, @CreatedAt);
+                     @OrderDate, @SalesRep, @FactoryCode, @DocDate, @TaxType, @PaymentTermName, @PaymentTermCode,
+                     @ImportStatus, @ImportedAt, @CreatedByAccount, @CreatedAt);
                 SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
             var id = await conn.ExecuteScalarAsync<int>(sql, header, transaction);
@@ -98,16 +100,18 @@ public class OrderImportService
 
         var sql = @"
             UPDATE OrderImportHeaders SET
-                OrderType    = @OrderType,
-                OrderNo      = @OrderNo,
-                CustomerCode = @CustomerCode,
-                DeptCode     = @DeptCode,
-                Remarks      = @Remarks,
-                OrderDate    = @OrderDate,
-                SalesRep     = @SalesRep,
-                FactoryCode  = @FactoryCode,
-                DocDate      = @DocDate,
-                TaxType      = @TaxType
+                OrderType       = @OrderType,
+                OrderNo         = @OrderNo,
+                CustomerCode    = @CustomerCode,
+                DeptCode        = @DeptCode,
+                Remarks         = @Remarks,
+                OrderDate       = @OrderDate,
+                SalesRep        = @SalesRep,
+                FactoryCode     = @FactoryCode,
+                DocDate         = @DocDate,
+                TaxType         = @TaxType,
+                PaymentTermName = @PaymentTermName,
+                PaymentTermCode = @PaymentTermCode
             WHERE Id = @Id";
         return await conn.ExecuteAsync(sql, header) > 0;
     }
@@ -150,10 +154,10 @@ public class OrderImportService
         var sql = @"
             INSERT INTO OrderImportDetails
                 (HeaderId, OrderType, SeqNo, ProductCode, ProductName,
-                 Warehouse, OrderQty, Unit, UnitPrice, Amount, Currency, CreatedAt)
+                 Warehouse, OrderQty, Unit, UnitPrice, Amount, Currency, CustItemNo, TaxAmount, CreatedAt)
             VALUES
                 (@HeaderId, @OrderType, @SeqNo, @ProductCode, @ProductName,
-                 @Warehouse, @OrderQty, @Unit, @UnitPrice, @Amount, @Currency, @CreatedAt);
+                 @Warehouse, @OrderQty, @Unit, @UnitPrice, @Amount, @Currency, @CustItemNo, @TaxAmount, @CreatedAt);
             SELECT CAST(SCOPE_IDENTITY() AS INT);";
         return await conn.ExecuteScalarAsync<int>(sql, detail);
     }
@@ -179,7 +183,9 @@ public class OrderImportService
                 Unit        = @Unit,
                 UnitPrice   = @UnitPrice,
                 Amount      = @Amount,
-                Currency    = @Currency
+                Currency    = @Currency,
+                CustItemNo  = @CustItemNo,
+                TaxAmount   = @TaxAmount
             WHERE Id = @Id";
         return await conn.ExecuteAsync(sql, detail) > 0;
     }
@@ -202,7 +208,7 @@ public class OrderImportService
     public async Task<OrderImportViewModel> ParseExcelAsync(Stream fileStream, string fileName)
     {
         var result = new OrderImportViewModel { FileName = fileName };
-        var rawRows = new List<(OrderImportHeader hdr, OrderImportDetail dtl)>();
+        var rawRows = new List<(int RowNo, OrderImportHeader Hdr, OrderImportDetail Dtl)>();
 
         using var wb = new XLWorkbook(fileStream);
         var ws = wb.Worksheet(1);
@@ -227,7 +233,7 @@ public class OrderImportService
                 SalesRep    = ws.Cell(row, 8).GetString().NullIfEmpty(),
                 FactoryCode = ws.Cell(row, 9).GetString().NullIfEmpty(),
                 DocDate     = ParseDateTime(ws.Cell(row, 10)),
-                TaxType     = ws.Cell(row, 11).GetString().NullIfEmpty(),
+                TaxType     = ws.Cell(row, 11).GetString().NullIfEmpty(), // 匯入值僅供參考，實際課稅別於驗證階段一律改用 COPMA.MA038
             };
 
             var detail = new OrderImportDetail
@@ -239,15 +245,14 @@ public class OrderImportService
                 Warehouse   = ws.Cell(row, 59).GetString().NullIfEmpty(),
                 OrderQty    = ws.Cell(row, 60).TryGetValue(out double qty) ? (decimal)qty : 0,
                 Unit        = ws.Cell(row, 61).GetString().NullIfEmpty(),
-                UnitPrice   = ws.Cell(row, 62).TryGetValue(out double up) ? (decimal)up : 0,
-                Amount      = ws.Cell(row, 63).TryGetValue(out double amt) ? (decimal)amt : 0,
+                UnitPrice   = ws.Cell(row, 62).TryGetValue(out double up) ? (decimal)up : 0, // 匯入單價，稅金換算階段會被覆寫成正確單價
                 Currency    = ws.Cell(row, 64).GetString().NullIfEmpty(),
             };
 
             if (string.IsNullOrWhiteSpace(header.CustomerCode) && string.IsNullOrWhiteSpace(header.OrderType))
                 continue;
 
-            rawRows.Add((header, detail));
+            rawRows.Add((row, header, detail));
         }
 
         if (rawRows.Count == 0)
@@ -256,28 +261,35 @@ public class OrderImportService
             return result;
         }
 
-        await FillMissingProductNamesAsync(rawRows.Select(r => r.dtl));
+        var validationErrors = await ValidateAndEnrichAsync(rawRows);
+        if (validationErrors.Count > 0)
+        {
+            result.Errors.AddRange(validationErrors);
+            return result;
+        }
+
+        await FillMissingProductNamesAsync(rawRows.Select(r => r.Dtl));
 
         var groups = rawRows
             .GroupBy(r => new
             {
-                r.hdr.CustomerCode,
-                r.hdr.OrderType,
-                OrderDate = r.hdr.OrderDate?.Date
+                r.Hdr.CustomerCode,
+                r.Hdr.OrderType,
+                OrderDate = r.Hdr.OrderDate?.Date
             })
             .ToList();
 
         foreach (var g in groups)
         {
-            var firstHdr = g.First().hdr;
-            firstHdr.Remarks = g.Select(r => r.hdr.Remarks)
+            var firstHdr = g.First().Hdr;
+            firstHdr.Remarks = g.Select(r => r.Hdr.Remarks)
                 .FirstOrDefault(r => !string.IsNullOrWhiteSpace(r));
             firstHdr.DetailCount = g.Count();
 
             result.HeaderGroups.Add(new OrderImportHeaderGroup
             {
                 Header = firstHdr,
-                Details = g.Select(r => r.dtl).ToList()
+                Details = g.Select(r => r.Dtl).ToList()
             });
         }
 
@@ -286,6 +298,138 @@ public class OrderImportService
 
         return result;
     }
+
+    /// <summary>
+    /// 匯入前驗證：1.單別須存在於 CMSMQ 且為訂單類單別 2.客戶代號須存在於 COPMA 3.品號須存在於 INVMB。
+    /// 三項皆通過後，依 COPMA 課稅別/稅別碼換算單價/金額/稅額，並帶出 COPMG 客戶品號。任一項不通過則回傳錯誤，整批不匯入。
+    /// </summary>
+    private async Task<List<string>> ValidateAndEnrichAsync(List<(int RowNo, OrderImportHeader Hdr, OrderImportDetail Dtl)> rows)
+    {
+        var errors = new List<string>();
+
+        using var erpConn = new SqlConnection(_erpConnectionAccessor.GetConnectionString());
+        await erpConn.OpenAsync();
+
+        // 1. 單別檢查 (CMSMQ：須為訂單類單別)
+        var orderTypes = rows.Select(r => r.Hdr.OrderType)
+            .Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var validOrderTypes = orderTypes.Count == 0
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : (await erpConn.QueryAsync<string>(
+                @"SELECT RTRIM(MQ001) FROM CMSMQ WHERE RTRIM(MQ001) IN @Types AND MQ003 LIKE '2%' AND MQ008 = ''",
+                new { Types = orderTypes })).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in orderTypes.Where(t => !validOrderTypes.Contains(t)))
+        {
+            var rowNos = string.Join(",", rows.Where(r => string.Equals(r.Hdr.OrderType, t, StringComparison.OrdinalIgnoreCase)).Select(r => r.RowNo));
+            errors.Add($"單別 [{t}] 於ERP無效或非訂單類單別 (第{rowNos}列)");
+        }
+
+        // 2. 客戶代號檢查 (COPMA)，同時取得課稅別(MA038)/稅別碼(MA118)供稅金換算
+        var customerCodes = rows.Select(r => r.Hdr.CustomerCode)
+            .Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var custRows = customerCodes.Count == 0
+            ? new List<CustomerTaxLookup>()
+            : (await erpConn.QueryAsync<CustomerTaxLookup>(
+                @"SELECT RTRIM(MA001) AS CustomerCode, RTRIM(MA038) AS TaxType, RTRIM(MA118) AS TaxCode,
+                         RTRIM(MA031) AS PaymentTermName, RTRIM(MA083) AS PaymentTermCode
+                  FROM COPMA WHERE RTRIM(MA001) IN @Codes",
+                new { Codes = customerCodes })).ToList();
+        var custMap = custRows.ToDictionary(c => c.CustomerCode, c => c, StringComparer.OrdinalIgnoreCase);
+        foreach (var c in customerCodes.Where(c => !custMap.ContainsKey(c)))
+        {
+            var rowNos = string.Join(",", rows.Where(r => string.Equals(r.Hdr.CustomerCode, c, StringComparison.OrdinalIgnoreCase)).Select(r => r.RowNo));
+            errors.Add($"客戶代號 [{c}] 於ERP不存在 (第{rowNos}列)");
+        }
+
+        // 3. 品號檢查 (INVMB)
+        var productCodes = rows.Select(r => r.Dtl.ProductCode)
+            .Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var validProductCodes = productCodes.Count == 0
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : (await erpConn.QueryAsync<string>(
+                "SELECT RTRIM(MB001) FROM INVMB WHERE RTRIM(MB001) IN @Codes", new { Codes = productCodes }))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in productCodes.Where(p => !validProductCodes.Contains(p)))
+        {
+            var rowNos = string.Join(",", rows.Where(r => string.Equals((r.Dtl.ProductCode ?? "").Trim(), p, StringComparison.OrdinalIgnoreCase)).Select(r => r.RowNo));
+            errors.Add($"品號 [{p}] 於ERP不存在，無法匯入 (第{rowNos}列)");
+        }
+
+        if (errors.Count > 0) return errors;
+
+        // 4. 客戶品號 (COPMG：MG001=客戶代號, MG002=品號, MG003=客戶品號)
+        var custItemMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (productCodes.Count > 0 && customerCodes.Count > 0)
+        {
+            var custItemRows = await erpConn.QueryAsync<CustItemLookup>(
+                @"SELECT RTRIM(MG001) AS CustomerCode, RTRIM(MG002) AS ProductCode, RTRIM(MG003) AS CustItemNo
+                  FROM COPMG
+                  WHERE RTRIM(MG001) IN @CustomerCodes AND RTRIM(MG002) IN @ProductCodes",
+                new { CustomerCodes = customerCodes, ProductCodes = productCodes });
+            foreach (var r in custItemRows)
+            {
+                var key = $"{r.CustomerCode.Trim()}|{r.ProductCode.Trim()}";
+                if (!custItemMap.ContainsKey(key))
+                    custItemMap[key] = r.CustItemNo;
+            }
+        }
+
+        // 稅率 (CMSNN，依客戶稅別碼 MA118 對照)
+        var taxCodes = custMap.Values.Select(c => c.TaxCode)
+            .Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var taxRateMap = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        if (taxCodes.Count > 0)
+        {
+            var rateRows = await erpConn.QueryAsync<TaxRateLookup>(
+                "SELECT RTRIM(NN001) AS TaxCode, NN004 AS Rate FROM CMSNN WHERE RTRIM(NN001) IN @Codes",
+                new { Codes = taxCodes });
+            foreach (var r in rateRows)
+                taxRateMap[r.TaxCode] = r.Rate; // CMSNN.NN004 已是小數稅率 (例:0.05 = 5%)，不可再除以100
+        }
+
+        // 套用：課稅別一律改用客戶資料 + 稅金換算 + 客戶品號帶入
+        foreach (var (_, hdr, dtl) in rows)
+        {
+            if (custMap.TryGetValue(hdr.CustomerCode, out var cust))
+            {
+                hdr.TaxType = cust.TaxType;
+                hdr.PaymentTermName = cust.PaymentTermName;
+                hdr.PaymentTermCode = cust.PaymentTermCode;
+                var rate = !string.IsNullOrWhiteSpace(cust.TaxCode) && taxRateMap.TryGetValue(cust.TaxCode, out var rt) ? rt : 0m;
+                var importPrice = dtl.UnitPrice;
+
+                switch (cust.TaxType)
+                {
+                    case "1": // 內含：匯入單價已含稅，還原為未稅單價
+                        dtl.UnitPrice = importPrice / (1 + rate);
+                        dtl.Amount = dtl.UnitPrice * dtl.OrderQty;
+                        dtl.TaxAmount = dtl.Amount * rate;
+                        break;
+                    case "2": // 外加：匯入單價即未稅單價，稅額另計
+                        dtl.UnitPrice = importPrice;
+                        dtl.Amount = dtl.UnitPrice * dtl.OrderQty;
+                        dtl.TaxAmount = dtl.Amount * rate;
+                        break;
+                    default: // 3.零稅率 4.免稅 9.不計稅
+                        dtl.UnitPrice = importPrice;
+                        dtl.Amount = dtl.UnitPrice * dtl.OrderQty;
+                        dtl.TaxAmount = 0m;
+                        break;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(dtl.ProductCode)
+                && custItemMap.TryGetValue($"{hdr.CustomerCode.Trim()}|{dtl.ProductCode.Trim()}", out var custItemNo))
+                dtl.CustItemNo = custItemNo;
+        }
+
+        return errors;
+    }
+
+    private sealed record CustomerTaxLookup(string CustomerCode, string TaxType, string TaxCode, string PaymentTermName, string PaymentTermCode);
+    private sealed record CustItemLookup(string CustomerCode, string ProductCode, string CustItemNo);
+    private sealed record TaxRateLookup(string TaxCode, decimal Rate);
 
     public async Task<(int SuccessHeaders, int SuccessDetails, List<string> Errors)> 
         ConfirmImportAsync(List<OrderImportHeaderGroup> groups)
@@ -327,14 +471,14 @@ public class OrderImportService
                 var batchNo = await GenerateBatchNoAsync(conn, transaction, today);
 
                 var insertHeaderSql = @"
-                    INSERT INTO OrderImportHeaders 
+                    INSERT INTO OrderImportHeaders
                         (ImportBatchNo, OrderType, OrderNo, CustomerCode, DeptCode, Remarks,
-                         OrderDate, SalesRep, FactoryCode, DocDate, TaxType,
-                         ImportStatus, ImportedAt, CreatedAt)
-                    VALUES 
+                         OrderDate, SalesRep, FactoryCode, DocDate, TaxType, PaymentTermName, PaymentTermCode,
+                         ImportStatus, ImportedAt, CreatedByAccount, CreatedAt)
+                    VALUES
                         (@ImportBatchNo, @OrderType, @OrderNo, @CustomerCode, @DeptCode, @Remarks,
-                         @OrderDate, @SalesRep, @FactoryCode, @DocDate, @TaxType,
-                         @ImportStatus, @ImportedAt, @CreatedAt);
+                         @OrderDate, @SalesRep, @FactoryCode, @DocDate, @TaxType, @PaymentTermName, @PaymentTermCode,
+                         @ImportStatus, @ImportedAt, @CreatedByAccount, @CreatedAt);
                     SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
                 hdr.ImportBatchNo = batchNo;
@@ -353,10 +497,10 @@ public class OrderImportService
                     var insertDetailSql = @"
                         INSERT INTO OrderImportDetails
                             (HeaderId, OrderType, SeqNo, ProductCode, ProductName,
-                             Warehouse, OrderQty, Unit, UnitPrice, Amount, Currency, CreatedAt)
+                             Warehouse, OrderQty, Unit, UnitPrice, Amount, Currency, CustItemNo, TaxAmount, CreatedAt)
                         VALUES
                             (@HeaderId, @OrderType, @SeqNo, @ProductCode, @ProductName,
-                             @Warehouse, @OrderQty, @Unit, @UnitPrice, @Amount, @Currency, @CreatedAt)";
+                             @Warehouse, @OrderQty, @Unit, @UnitPrice, @Amount, @Currency, @CustItemNo, @TaxAmount, @CreatedAt)";
 
                     await conn.ExecuteAsync(insertDetailSql, dtl, transaction);
                     detailsDone++;
@@ -534,7 +678,14 @@ public class OrderImportService
                 // 彙總
                 var totalQty = details.Sum(d => d.OrderQty);
                 var totalAmt = details.Sum(d => d.Amount);
+                var totalTax = details.Sum(d => d.TaxAmount);
                 var currency = details.FirstOrDefault()?.Currency ?? "NTD";
+
+                // 稅率 (CMSNN，依客戶稅別碼 MA118 對照；NN004 已是小數稅率，例:0.05 = 5%)
+                var taxRate = !string.IsNullOrWhiteSpace(custInfo?.TaxCode)
+                    ? await erpConn.ExecuteScalarAsync<decimal?>(
+                        "SELECT NN004 FROM CMSNN WHERE RTRIM(NN001) = @TaxCode", new { custInfo.TaxCode }) ?? 0m
+                    : 0m;
 
                 // 寫入 COPTC
                 var coptcParams = new
@@ -547,15 +698,15 @@ public class OrderImportService
                     TC004 = header.CustomerCode ?? "", TC005 = header.DeptCode ?? "",
                     TC006 = header.SalesRep ?? "", TC007 = header.FactoryCode ?? factory,
                     TC008 = currency, TC009 = 1m, TC010 = shipAddress1, TC011 = custInfo?.ShipAddress2 ?? "",
-                    TC012 = header.OrderNo ?? "", TC013 = custInfo?.PriceTerm ?? "", TC014 = custInfo?.PaymentTerm ?? "",
+                    TC012 = header.OrderNo ?? "", TC013 = custInfo?.PriceTerm ?? "", TC014 = header.PaymentTermName ?? custInfo?.PaymentTerm ?? "",
                     TC015 = header.Remarks ?? "", TC016 = header.TaxType ?? "",
                     TC017 = "", TC018 = custInfo?.Contact ?? "", TC019 = custInfo?.ShipMethod ?? "", TC020 = "", TC021 = "",
                     TC022 = "", TC023 = "", TC024 = "", TC025 = "", TC026 = 0m,
-                    TC027 = "N", TC028 = 0, TC029 = totalAmt, TC030 = 0m, TC031 = totalQty,
+                    TC027 = "N", TC028 = 0, TC029 = totalAmt, TC030 = totalTax, TC031 = totalQty,
                     TC032 = header.CustomerCode ?? "",
                     TC033 = "", TC034 = "", TC035 = "", TC036 = "", TC037 = "", TC038 = "",
                     TC039 = (header.DocDate ?? refDate).ToString("yyyyMMdd"),
-                    TC040 = "", TC041 = 0m, TC042 = custInfo?.PaymentTermCode ?? "", TC043 = 0m, TC044 = 0m, TC045 = 0m, TC046 = 0m,
+                    TC040 = "", TC041 = taxRate, TC042 = header.PaymentTermCode ?? custInfo?.PaymentTermCode ?? "", TC043 = 0m, TC044 = 0m, TC045 = 0m, TC046 = 0m,
                     TC047 = "", TC048 = "N", TC049 = "", TC050 = "N",
                     TC051 = "", TC052 = 0, TC053 = custInfo?.FullName ?? "", TC054 = "", TC055 = "", TC056 = "1",
                     TC057 = "N", TC058 = "", TC059 = "", TC060 = "N", TC061 = "", TC062 = "",
@@ -608,7 +759,7 @@ public class OrderImportService
                         TD006 = specMap.TryGetValue((d.ProductCode ?? "").Trim(), out var spec) ? spec : "",
                         TD007 = d.Warehouse ?? "", TD008 = d.OrderQty, TD009 = 0m,
                         TD010 = d.Unit ?? "", TD011 = d.UnitPrice, TD012 = d.Amount,
-                        TD013 = "", TD014 = "", TD015 = "", TD016 = "N", TD017 = "", TD018 = "", TD019 = "",
+                        TD013 = (header.DocDate ?? refDate).ToString("yyyyMMdd"), TD014 = d.CustItemNo ?? "", TD015 = "", TD016 = "N", TD017 = "", TD018 = "", TD019 = "",
                         TD020 = "", TD021 = "N", TD022 = 0m, TD023 = "", TD024 = 0m, TD025 = 0m, TD026 = 0m,
                         TD027 = "", TD028 = "", TD029 = "", TD030 = 0m, TD031 = 0m,
                         TD032 = 0m, TD033 = 0m, TD034 = 0m, TD035 = 0m, TD036 = "",

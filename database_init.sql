@@ -83,9 +83,12 @@ BEGIN
         SalesRep        NVARCHAR(20)   NULL,           -- 業務人員 (Col H)
         FactoryCode     NVARCHAR(20)   NULL,           -- 廠別代號 (Col I)
         DocDate         DATETIME2      NULL,           -- 單據日期 (Col J)
-        TaxType         NVARCHAR(10)   NULL,           -- 課稅別 (Col K)
+        TaxType         NVARCHAR(10)   NULL,           -- 課稅別 (依 COPMA.MA038 帶出)
+        PaymentTermName NVARCHAR(20)   NULL,           -- 付款條件名稱 (依 COPMA.MA031 帶出)
+        PaymentTermCode NVARCHAR(10)   NULL,           -- 付款條件代碼 (依 COPMA.MA083 帶出)
         ImportStatus    NVARCHAR(20)   NOT NULL DEFAULT N'待匯入',
         ImportedAt      DATETIME2      NULL,
+        CreatedByAccount NVARCHAR(50)  NULL,           -- 建立/匯入此單頭的登入帳號
         TransferStatus  INT            NOT NULL DEFAULT 1,   -- 1=未拋轉 2=已拋轉 3=拋轉失敗
         TransferMessage NVARCHAR(500)  NULL,           -- 拋轉失敗訊息
         CreatedAt       DATETIME2      NOT NULL DEFAULT GETDATE()
@@ -111,9 +114,11 @@ BEGIN
         Warehouse       NVARCHAR(20)   NULL,           -- 庫別 (Col BG)
         OrderQty        DECIMAL(18,4)  NOT NULL DEFAULT 0,  -- 訂單數量 (Col BH)
         Unit            NVARCHAR(10)   NULL,           -- 單位 (Col BI)
-        UnitPrice       DECIMAL(18,4)  NOT NULL DEFAULT 0,  -- 單價 (Col BJ)
-        Amount          DECIMAL(18,4)  NOT NULL DEFAULT 0,  -- 金額 (Col BK)
+        UnitPrice       DECIMAL(18,4)  NOT NULL DEFAULT 0,  -- 單價 (Col BJ，稅金換算後)
+        Amount          DECIMAL(18,4)  NOT NULL DEFAULT 0,  -- 金額 (Col BK，稅金換算後)
         Currency        NVARCHAR(10)   NULL,           -- 交易幣別 (Col BL)
+        CustItemNo      NVARCHAR(50)   NULL,           -- 客戶品號 (依品號查 INVMB/COPMG 帶出)
+        TaxAmount       DECIMAL(18,4)  NOT NULL DEFAULT 0,  -- 稅額 (依客戶課稅別/稅率換算)
         CreatedAt       DATETIME2      NOT NULL DEFAULT GETDATE(),
 
         CONSTRAINT FK_OrderImportDetails_Header
@@ -236,6 +241,50 @@ BEGIN
     BEGIN
         ALTER TABLE OrderImportHeaders ADD TransferMessage NVARCHAR(500) NULL;
         PRINT N'已新增 OrderImportHeaders.TransferMessage 欄位';
+    END
+END
+GO
+
+-- ============================================
+-- 8. 遷移：為現有 OrderImportDetails 增加客戶品號/稅額欄位
+-- ============================================
+IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'OrderImportDetails') AND type = 'U')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'OrderImportDetails') AND name = 'CustItemNo')
+    BEGIN
+        ALTER TABLE OrderImportDetails ADD CustItemNo NVARCHAR(50) NULL;
+        PRINT N'已新增 OrderImportDetails.CustItemNo 欄位';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'OrderImportDetails') AND name = 'TaxAmount')
+    BEGIN
+        ALTER TABLE OrderImportDetails ADD TaxAmount DECIMAL(18,4) NOT NULL DEFAULT 0;
+        PRINT N'已新增 OrderImportDetails.TaxAmount 欄位';
+    END
+END
+GO
+
+-- ============================================
+-- 9. 遷移：為現有 OrderImportHeaders 增加付款條件欄位
+-- ============================================
+IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'OrderImportHeaders') AND type = 'U')
+BEGIN
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'OrderImportHeaders') AND name = 'PaymentTermName')
+    BEGIN
+        ALTER TABLE OrderImportHeaders ADD PaymentTermName NVARCHAR(20) NULL;
+        PRINT N'已新增 OrderImportHeaders.PaymentTermName 欄位';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'OrderImportHeaders') AND name = 'PaymentTermCode')
+    BEGIN
+        ALTER TABLE OrderImportHeaders ADD PaymentTermCode NVARCHAR(10) NULL;
+        PRINT N'已新增 OrderImportHeaders.PaymentTermCode 欄位';
+    END
+
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'OrderImportHeaders') AND name = 'CreatedByAccount')
+    BEGIN
+        ALTER TABLE OrderImportHeaders ADD CreatedByAccount NVARCHAR(50) NULL;
+        PRINT N'已新增 OrderImportHeaders.CreatedByAccount 欄位';
     END
 END
 GO

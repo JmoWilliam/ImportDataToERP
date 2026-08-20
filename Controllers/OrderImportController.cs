@@ -17,12 +17,15 @@ public class OrderImportController : Controller
         _service = service;
     }
 
+    private string GetOperatorAccount()
+        => User.FindFirstValue(ClaimTypes.GivenName) ?? User.Identity?.Name ?? "WEB";
+
     // ========== 列表 ==========
 
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> Index()
     {
-        var headers = await _service.GetAllHeadersAsync();
+        var headers = await _service.GetHeadersByAccountAsync(GetOperatorAccount());
         return View(headers);
     }
 
@@ -39,6 +42,7 @@ public class OrderImportController : Controller
     {
         if (!ModelState.IsValid) return View("Edit", header);
 
+        header.CreatedByAccount = GetOperatorAccount();
         var id = await _service.CreateHeaderAsync(header);
         TempData["Success"] = $"已新增單頭，匯入單號：{header.ImportBatchNo}";
         return RedirectToAction(nameof(Edit), new { id });
@@ -85,8 +89,7 @@ public class OrderImportController : Controller
     [HttpPost]
     public async Task<IActionResult> TransferToErp(int id)
     {
-        var operatorAccount = User.FindFirstValue(ClaimTypes.GivenName) ?? User.Identity?.Name ?? "WEB";
-        var result = await _service.TransferToErpAsync(id, operatorAccount);
+        var result = await _service.TransferToErpAsync(id, GetOperatorAccount());
 
         if (result.StartsWith("OK|"))
         {
@@ -227,6 +230,10 @@ public class OrderImportController : Controller
             TempData["Error"] = "無匯入資料，請重新上傳";
             return RedirectToAction(nameof(Index));
         }
+
+        var operatorAccount = GetOperatorAccount();
+        foreach (var g in groups)
+            g.Header.CreatedByAccount = operatorAccount;
 
         var (headers, details, errors) = await _service.ConfirmImportAsync(groups);
 

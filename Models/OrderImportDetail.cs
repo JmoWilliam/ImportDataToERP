@@ -52,6 +52,14 @@ public class OrderImportDetail
     [Display(Name = "交易幣別")]
     public string? Currency { get; set; }
 
+    /// <summary>客戶品號 (依品號查 INVMB/COPMG 帶出)</summary>
+    [Display(Name = "客戶品號")]
+    public string? CustItemNo { get; set; }
+
+    /// <summary>稅額 (依客戶課稅別/稅率換算)</summary>
+    [Display(Name = "稅額")]
+    public decimal TaxAmount { get; set; }
+
     [Display(Name = "建立時間")]
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 }

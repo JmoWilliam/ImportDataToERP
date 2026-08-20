@@ -98,6 +98,14 @@
                     <label class="block text-xs font-semibold text-gray-600 mb-1.5">課稅別</label>
                     <input asp-for="TaxType" class="input-modern w-full" placeholder="1~9" />
                 </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">付款條件名稱</label>
+                    <input asp-for="PaymentTermName" class="input-modern w-full" placeholder="依客戶資料帶出" />
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1.5">付款條件代碼</label>
+                    <input asp-for="PaymentTermCode" class="input-modern w-full" placeholder="依客戶資料帶出" />
+                </div>
                 <div class="col-span-2">
                     <label class="block text-xs font-semibold text-gray-600 mb-1.5">備註</label>
                     <input asp-for="Remarks" class="input-modern w-full" placeholder="訂單備註..." />
@@ -159,12 +167,14 @@
                         <tr>
                             <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 w-16">序號</th>
                             <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">品號</th>
+                            <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">客戶品號</th>
                             <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">品名</th>
                             <th class="px-3 py-2.5 text-left text-xs font-semibold text-gray-500">庫別</th>
                             <th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-20">數量</th>
                             <th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-14">單位</th>
                             <th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">單價</th>
                             <th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-24">金額</th>
+                            <th class="px-3 py-2.5 text-right text-xs font-semibold text-gray-500 w-22">稅額</th>
                             <th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-14">幣別</th>
                             <th class="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 w-28">操作</th>
                         </tr>
@@ -176,23 +186,27 @@
                                 <!-- Read mode -->
                                 <td class="px-3 py-2 view-mode text-sm">@d.SeqNo</td>
                                 <td class="px-3 py-2 view-mode font-mono text-xs text-gray-700">@d.ProductCode</td>
+                                <td class="px-3 py-2 view-mode font-mono text-xs text-gray-500">@d.CustItemNo</td>
                                 <td class="px-3 py-2 view-mode text-sm">@d.ProductName</td>
                                 <td class="px-3 py-2 view-mode text-sm text-gray-500">@d.Warehouse</td>
                                 <td class="px-3 py-2 view-mode text-sm text-right font-medium">@d.OrderQty.ToString("N0")</td>
                                 <td class="px-3 py-2 view-mode text-sm text-center">@d.Unit</td>
                                 <td class="px-3 py-2 view-mode text-sm text-right">@d.UnitPrice.ToString("N2")</td>
                                 <td class="px-3 py-2 view-mode text-sm text-right font-medium">@d.Amount.ToString("N2")</td>
+                                <td class="px-3 py-2 view-mode text-sm text-right text-gray-500">@d.TaxAmount.ToString("N2")</td>
                                 <td class="px-3 py-2 view-mode text-sm text-center">@d.Currency</td>
 
                                 <!-- Edit mode -->
                                 <td class="px-3 py-2 edit-mode hidden"><input class="w-16 input-modern text-xs py-1" value="@d.SeqNo" data-field="SeqNo" /></td>
                                 <td class="px-3 py-2 edit-mode hidden"><input class="w-24 input-modern text-xs py-1 font-mono" value="@d.ProductCode" data-field="ProductCode" /></td>
+                                <td class="px-3 py-2 edit-mode hidden"><input class="w-24 input-modern text-xs py-1 font-mono" value="@d.CustItemNo" data-field="CustItemNo" /></td>
                                 <td class="px-3 py-2 edit-mode hidden"><input class="w-28 input-modern text-xs py-1" value="@d.ProductName" data-field="ProductName" /></td>
                                 <td class="px-3 py-2 edit-mode hidden"><input class="w-16 input-modern text-xs py-1" value="@d.Warehouse" data-field="Warehouse" /></td>
                                 <td class="px-3 py-2 edit-mode hidden"><input class="w-20 input-modern text-xs py-1 text-right" value="@d.OrderQty" data-field="OrderQty" type="number" step="any" /></td>
                                 <td class="px-3 py-2 edit-mode hidden"><input class="w-12 input-modern text-xs py-1 text-center" value="@d.Unit" data-field="Unit" /></td>
                                 <td class="px-3 py-2 edit-mode hidden"><input class="w-20 input-modern text-xs py-1 text-right" value="@d.UnitPrice" data-field="UnitPrice" type="number" step="any" /></td>
                                 <td class="px-3 py-2 edit-mode hidden"><input class="w-22 input-modern text-xs py-1 text-right" value="@d.Amount" data-field="Amount" type="number" step="any" /></td>
+                                <td class="px-3 py-2 edit-mode hidden"><input class="w-20 input-modern text-xs py-1 text-right" value="@d.TaxAmount" data-field="TaxAmount" type="number" step="any" /></td>
                                 <td class="px-3 py-2 edit-mode hidden"><input class="w-14 input-modern text-xs py-1 text-center" value="@d.Currency" data-field="Currency" /></td>
 
                                 <!-- Actions -->
@@ -270,13 +284,15 @@ async function saveRow(id) {
         const cells = row.querySelectorAll('.view-mode');
         cells[0].textContent = data.SeqNo || '';
         cells[1].textContent = data.ProductCode || '';
-        cells[2].textContent = data.ProductName || '';
-        cells[3].textContent = data.Warehouse || '';
-        cells[4].textContent = Number(data.OrderQty || 0).toLocaleString();
-        cells[5].textContent = data.Unit || '';
-        cells[6].textContent = Number(data.UnitPrice || 0).toLocaleString(undefined, {minimumFractionDigits:2});
-        cells[7].textContent = Number(data.Amount || 0).toLocaleString(undefined, {minimumFractionDigits:2});
-        cells[8].textContent = data.Currency || '';
+        cells[2].textContent = data.CustItemNo || '';
+        cells[3].textContent = data.ProductName || '';
+        cells[4].textContent = data.Warehouse || '';
+        cells[5].textContent = Number(data.OrderQty || 0).toLocaleString();
+        cells[6].textContent = data.Unit || '';
+        cells[7].textContent = Number(data.UnitPrice || 0).toLocaleString(undefined, {minimumFractionDigits:2});
+        cells[8].textContent = Number(data.Amount || 0).toLocaleString(undefined, {minimumFractionDigits:2});
+        cells[9].textContent = Number(data.TaxAmount || 0).toLocaleString(undefined, {minimumFractionDigits:2});
+        cells[10].textContent = data.Currency || '';
         cancelRow(id);
     } catch(e) {
         alert('儲存失敗: ' + e.message);
@@ -310,8 +326,8 @@ async function deleteRow(id) {
 async function addNewRow() {
     const data = {
         headerId: headerId,
-        seqNo: '', productCode: '', productName: '', warehouse: '',
-        orderQty: 0, unit: '', unitPrice: 0, amount: 0, currency: '', orderType: ''
+        seqNo: '', productCode: '', custItemNo: '', productName: '', warehouse: '',
+        orderQty: 0, unit: '', unitPrice: 0, amount: 0, taxAmount: 0, currency: '', orderType: ''
     };
     try {
         const resp = await fetch('/OrderImport/CreateDetail', {
